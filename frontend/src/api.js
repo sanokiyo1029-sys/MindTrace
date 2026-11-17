@@ -74,6 +74,7 @@ export const api = {
     method: 'POST',
     ...(studentToken && { headers: { Authorization: `Bearer ${studentToken}` } }),
   }),
+  classes: () => request('/classes'),
   students: (classId) => request(`/classes/${classId}/students`),
   assessments: () => request('/assessments'),
   assessment: (id) => request(`/assessments/${id}`),

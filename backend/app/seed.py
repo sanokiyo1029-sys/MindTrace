@@ -18,6 +18,14 @@ from app.security import hash_secret
 TEACHER_EMAIL = "teacher@mindtrace.demo"
 TEACHER_PASSWORD = "demo1234"
 
+# A separate teacher + fictional class for testing the Android app, so test scans never touch demo class 7A.
+APK_TESTER_EMAIL = "apk.tester@mindtrace.demo"
+APK_TESTER_PASSWORD = "apk-b3t1uq48"
+APK_TEST_ROSTER = [  # (name, student code, roll no, PIN), all fictional
+    ("Ishaan", "7T-01", "01", "1212"), ("Tara", "7T-02", "02", "2323"), ("Neel", "7T-03", "03", "3434"),
+    ("Zara", "7T-04", "04", "4545"), ("Advik", "7T-05", "05", "5656"),
+]
+
 
 def roster() -> list[dict]:
     path = FIXTURES_DIR / "roster.json"
@@ -52,6 +60,18 @@ def seed(reset: bool = False) -> dict:
                 db.add(Student(id=s.get("id") or f"st_{i:02d}", class_id="cl_7a", display_name=s["display_name"],
                                student_code=code, roll_no=str(s.get("roll_no") or from_student_code(code)),
                                pin_hash=hash_secret(str(s["pin"]))))
+        tt = db.scalar(select(Teacher).where(Teacher.email == APK_TESTER_EMAIL))
+        if not tt:
+            tt = Teacher(id="t_apk_tester", email=APK_TESTER_EMAIL, name="APK Tester",
+                         password_hash=hash_secret(APK_TESTER_PASSWORD))
+            db.add(tt)
+        if not db.get(ClassRoom, "cl_7t"):
+            db.add(ClassRoom(id="cl_7t", teacher_id=tt.id, name="7T", grade="7"))
+        db.flush()
+        for name, code, roll, pin in APK_TEST_ROSTER:
+            if not db.scalar(select(Student).where(Student.student_code == code)):
+                db.add(Student(id=f"st_{code.lower().replace('-', '_')}", class_id="cl_7t", display_name=name,
+                               student_code=code, roll_no=roll, pin_hash=hash_secret(pin)))
         db.commit()
         return {"teacher": TEACHER_EMAIL, "password": TEACHER_PASSWORD,
                 "students": [(s["student_code"], str(s["pin"])) for s in roster()]}

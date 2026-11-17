@@ -19,6 +19,7 @@ The first start creates `mindtrace.db` and the demo data automatically. API docs
 
 - **Teacher login:** `teacher@mindtrace.demo` / `demo1234`
 - **Students (code / PIN):** `7A-01`/`1111`, `7A-02`/`2222`, `7A-03`/`3333`, `7A-04`/`4444`, `7A-05`/`5555` (fictional; from `tests/fixtures/roster.json` once Samrudh adds it)
+- **APK test teacher:** `apk.tester@mindtrace.demo`, password = `APK_TESTER_PASSWORD` in `app/seed.py`. Owns its own fictional class **7T** (`7T-01`…`7T-05`, roll numbers `01`–`05`, PINs in `APK_TEST_ROSTER`), so app testing never touches demo class 7A.
 - Fresh start: `python -m app.seed --reset`
 - Tests: `python -m pytest -q tests` (full loop on synthetic phone photos, Gemini mocked)
 
