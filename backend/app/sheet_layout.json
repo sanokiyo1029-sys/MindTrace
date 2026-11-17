@@ -1,0 +1,49 @@
+{
+  "_comment": "ONE source of truth for printing AND scanning. All values in mm from the top-left of an A4 page. Change it = reprint the test pack.",
+  "page_mm": [
+    210,
+    297
+  ],
+  "px_per_mm": 10,
+  "marker_size_mm": 10,
+  "marker_centres_mm": {
+    "tl": [
+      15,
+      15
+    ],
+    "tr": [
+      195,
+      15
+    ],
+    "br": [
+      195,
+      282
+    ],
+    "bl": [
+      15,
+      282
+    ]
+  },
+  "qr": {
+    "x": 160,
+    "y": 20,
+    "size": 30
+  },
+  "header": {
+    "x": 25,
+    "y": 22
+  },
+  "questions_top_mm": 62,
+  "questions_bottom_mm": 268,
+  "max_questions": 5,
+  "bubble_radius_mm": 4,
+  "bubble_option_x_mm": [
+    26,
+    71,
+    116,
+    161
+  ],
+  "option_text_offset_mm": 6.5,
+  "letter_offset_mm": -6.5,
+  "rule_y_mm": 59
+}
