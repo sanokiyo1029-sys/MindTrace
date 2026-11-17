@@ -7,6 +7,7 @@ import { ClassOverview, FeedbackPage, HistoryPage, PracticePanel, Recommendation
 import Auth from './Auth.jsx';
 import Landing, { SiteHeader, Wordmark } from './Landing.jsx';
 import StudentHome from './StudentHome.jsx';
+import AiPage from './AiPage.jsx';
 import PaperSurface from './PaperSurface.jsx';
 import Icon from './Icon.jsx';
 
@@ -15,7 +16,10 @@ const nav = [
   { to: '/workspace', label: 'Overview', icon: 'grid' }, { to: '/assessment', label: 'Create assessment', icon: 'plus' },
   { to: '/scanner', label: 'Scan papers', icon: 'scan' }, { to: '/insights', label: 'Class insights', icon: 'chart' },
   { to: '/recommendations', label: 'Teaching recommendations', icon: 'book' }, { to: '/history', label: 'History', icon: 'clock' },
+  { to: '/ai', label: 'AI assistant', icon: 'spark' },
 ];
+// After signing in, go back to the page that asked for it (e.g. /ai). Same-site paths only.
+const nextPath = () => { const n = new URLSearchParams(window.location.search).get('next') || ''; return /^\/(?!\/)[\w\-/]*$/.test(n) ? n : ''; };
 const subPages = { '/review': 'Question review', '/print': 'Print sheets', '/review-scans': 'Scan review', '/followup': 'Follow-up', '/feedback': 'Student feedback' };
 
 const emptyAssessment = { id: '', class_id: 'cl_7a', title: '', topic: '', concepts_text: '', status: 'draft', questions: [] };
@@ -49,13 +53,15 @@ function App() {
     else api.me().then(m => m.teacher && setTeacherId(m.teacher.id)).catch(() => {});
     setTeacherTokenState(session.token);
     setSample(false);
-    navigate('/workspace', { replace: true });
+    navigate(nextPath() || '/workspace', { replace: true });
   }
 
   function signOutTeacher() {
     if (!sample) {
       api.logout().catch(() => {});
       window.google?.accounts?.id?.disableAutoSelect();
+      // App: also forget the Google account choice, so the next Continue with Google shows the account picker
+      if (isNative) import('@capgo/capacitor-social-login').then(({ SocialLogin }) => SocialLogin.logout({ provider: 'google' })).catch(() => {});
       setTeacherToken('');
       setTeacherTokenState('');
       store.set('mt_assessment', '');
@@ -93,7 +99,7 @@ function App() {
       ? <ExperiencePage page="student" onSignOut={() => signOutStudent(false)}><StudentHome token={studentSession.token} onExpired={() => signOutStudent(true)} /></ExperiencePage>
       : <Navigate to="/login?role=student" replace />;
   }
-  if (!sample && !teacherToken) return <Navigate to={studentSession ? '/student' : '/login?role=teacher'} replace />;
+  if (!sample && !teacherToken) return <Navigate to={studentSession ? '/student' : `/login?role=teacher${pathname === '/workspace' ? '' : `&next=${encodeURIComponent(pathname)}`}`} replace />;
   return <TeacherWorkspace key={sample ? 'sample' : teacherToken} isMock={sample} teacherToken={teacherToken} onSignOut={signOutTeacher} />;
 }
 
@@ -267,7 +273,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   const sampleTag = isMock && <span className="mode-tag" title="Uses labelled fixture data"><span className="mode-dot" /> Mock mode · sample data, not live</span>;
   const context = { classes, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock };
 
-  const mobileNav = nav;
+  const mobileNav = nav.filter(n => n.to !== '/history'); // History is linked from the Overview on phones
   return <div className="shell workspace-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <div className={`busy-bar ${loading ? 'on' : ''}`} aria-hidden="true" />
@@ -293,19 +299,22 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
         <Route path="/recommendations" element={<RecommendationsPage {...context} />} />
         <Route path="/feedback" element={<FeedbackPage {...context} />} />
         <Route path="/history" element={<HistoryPage {...context} />} />
+        <Route path="/ai" element={<AiPage flash={flash} />} />
         <Route path="/students/:id" element={<StudentReportPage />} />
         <Route path="*" element={<Navigate to="/workspace" replace />} />
       </Routes></div></main>
     </div>
-    <nav className="mobile-nav" aria-label="Mobile navigation">{mobileNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} aria-label={item.label} className={({ isActive }) => isActive ? 'mobile-active' : ''}><Icon name={item.icon} size={21} /><span>{{ 'Create assessment': 'Create', 'Teaching recommendations': 'Teach', 'Class insights': 'Insights', 'Scan papers': 'Scan' }[item.label] || item.label}</span></NavLink>)}</nav>
+    <nav className="mobile-nav" aria-label="Mobile navigation">{mobileNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} aria-label={item.label} className={({ isActive }) => isActive ? 'mobile-active' : ''}><Icon name={item.icon} size={21} /><span>{{ 'Create assessment': 'Create', 'Teaching recommendations': 'Teach', 'Class insights': 'Insights', 'Scan papers': 'Scan', 'AI assistant': 'AI' }[item.label] || item.label}</span></NavLink>)}</nav>
     {toast && <div key={toast.id} className={`toast toast-${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}><span className="toast-badge" aria-hidden="true">{toast.type === 'success' ? <Icon name="check" size={15} /> : toast.type === 'error' ? '!' : 'i'}</span><span className="toast-text">{toast.message}</span><button aria-label="Dismiss notification" onClick={() => setToast(null)}><Icon name="close" size={16} /></button>{toast.type === 'success' && <i className="wedges" aria-hidden="true"><i /></i>}</div>}
   </div>;
 }
 
 
-// "Continue with Google" (Google Identity Services). Shown only when the server has a Google client ID, and not
-// in the Android app: Google blocks sign-in inside app web views (a native sign-in can post to /auth/google later).
-// The backend checks the token and allows linked teacher accounts only; closing Google's window just does nothing.
+// "Continue with Google". The server says whether it's on (/auth/config gives the web client ID) and checks every
+// token (linked teacher accounts only). Website: Google Identity Services popup. Android app: Google blocks its web
+// sign-in inside app web views, so the app uses the native account picker (Credential Manager via
+// @capgo/capacitor-social-login); its ID token is issued for the same web client ID and goes to the same /auth/google.
+const CANCELED = 'Google sign-in was canceled. Choose Continue with Google to try again.';
 let gisScript;
 const loadGis = () => gisScript ||= new Promise((resolve, reject) => {
   const s = Object.assign(document.createElement('script'), { src: 'https://accounts.google.com/gsi/client', async: true });
@@ -314,24 +323,52 @@ const loadGis = () => gisScript ||= new Promise((resolve, reject) => {
 });
 function GoogleButton({ onToken, onError }) {
   const slot = useRef(null); const [state, setState] = useState('off'); // off | ready | working | unavailable
+  const [clientId, setClientId] = useState(null);
+  const clickedAt = useRef(0);
+  async function finish(credential) {
+    clickedAt.current = 0; setState('working'); onError('');
+    try { const r = await api.googleLogin({ credential }); onToken(r.token, r.teacher); }
+    catch (e) { onError(e.message); setState('ready'); }
+  }
   useEffect(() => {
-    if (isNative) return;
     let live = true;
-    api.authConfig().then(({ google_client_id: clientId }) => {
-      if (!clientId || !live) return;
+    const load = () => api.authConfig().then(({ google_client_id: id }) => {
+      if (!id || !live) return;
+      setClientId(id);
+      if (isNative) { setState('ready'); return; }
       return loadGis().then(() => {
         if (!live) return;
-        window.google.accounts.id.initialize({ client_id: clientId, auto_select: false, cancel_on_tap_outside: true, context: 'signin', ux_mode: 'popup',
-          callback: async ({ credential }) => { setState('working'); onError(''); try { const r = await api.googleLogin({ credential }); onToken(r.token, r.teacher); } catch (e) { onError(e.message); setState('ready'); } } });
-        window.google.accounts.id.renderButton(slot.current, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular', logo_alignment: 'left', width: 300 });
+        window.google.accounts.id.initialize({ client_id: id, auto_select: false, cancel_on_tap_outside: true, context: 'signin', ux_mode: 'popup',
+          callback: ({ credential }) => finish(credential) });
+        window.google.accounts.id.renderButton(slot.current, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular', logo_alignment: 'left', width: 300,
+          click_listener: () => { clickedAt.current = Date.now(); onError(''); } });
         setState('ready');
       }, () => live && setState('unavailable'));
     }).catch(() => {}); // server unreachable: the password form shows that error on submit
-    return () => { live = false; };
+    load();
+    // Google gives no "popup closed" callback. If the page gets focus back after a click and no credential follows,
+    // the user closed the window or cancelled.
+    const onFocus = () => { const at = clickedAt.current; if (at && Date.now() - at > 800) setTimeout(() => { if (clickedAt.current === at) { clickedAt.current = 0; onError(CANCELED); } }, 1500); };
+    addEventListener('focus', onFocus); addEventListener('mt-server', load); // the app's server address was just set
+    return () => { live = false; removeEventListener('focus', onFocus); removeEventListener('mt-server', load); };
   }, []);
+  async function nativeSignIn() {
+    setState('working'); onError('');
+    try {
+      const { SocialLogin } = await import('@capgo/capacitor-social-login');
+      await SocialLogin.initialize({ google: { webClientId: clientId } });
+      const { result } = await SocialLogin.login({ provider: 'google', options: { scopes: ['profile', 'email'] } });
+      if (!result?.idToken) throw new Error('Google didn’t return a sign-in token. Try again.');
+      await finish(result.idToken);
+    } catch (e) { onError(e?.code === 'USER_CANCELLED' ? CANCELED : `Google sign-in didn’t finish: ${e?.message || 'unknown error'}`); setState('ready'); }
+  }
   if (state === 'unavailable') return <p className="google-note">Google sign-in couldn’t load. Use your email and password.</p>;
-  return <div className="google-signin" hidden={state === 'off'}><div className="or-divider"><span>or</span></div><div ref={slot} className="google-slot"/>{state === 'working' && <p className="busy-hint" role="status">Signing in with Google…</p>}</div>;
+  return <div className="google-signin" hidden={state === 'off'}><div className="or-divider"><span>or</span></div>
+    {isNative ? <button type="button" className="button outline google-native" disabled={state === 'working'} onClick={nativeSignIn}><GoogleMark /> Continue with Google</button> : <div ref={slot} className="google-slot"/>}
+    {state === 'working' && <p className="busy-hint" role="status">Signing in with Google…</p>}</div>;
 }
+// Google's multicolour "G" (brand mark required next to the button text).
+const GoogleMark = () => <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>;
 
 function ServerField() {
   const [value, setValue] = useState(getServer);

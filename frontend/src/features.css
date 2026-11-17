@@ -91,3 +91,25 @@
   .sync-badge{max-width:160px;font-size:11px}
 }
 @media(max-width:560px){.mobile-nav a{min-width:0;flex:1;font-size:9px}}
+
+/* AI assistant */
+.ai-panel{padding:18px 20px;display:grid;gap:12px}
+.ai-actions{display:flex;flex-wrap:wrap;gap:8px}
+.ai-actions button{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 13px;border:1px solid var(--line);border-radius:20px;background:#fffef7;font-weight:600;color:#564e44}
+.ai-actions button:not(:disabled):hover{border-color:#b9ac9d}
+.ai-preview{position:relative;justify-self:start;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fffef7}
+.ai-preview img{display:block;max-width:min(320px,100%);max-height:240px;border-radius:4px}
+.ai-file{display:grid;font-size:13px;padding:8px 36px 8px 8px}.ai-file small{color:var(--muted)}
+.ai-remove{position:absolute;top:6px;right:6px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:#fffef7;display:grid;place-items:center}
+.ai-form{display:grid;gap:8px}.ai-prompt{margin:0}.ai-prompt textarea{width:100%}
+.ai-send-row{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}
+.ai-hint{color:var(--muted);font-size:12px}
+.ai-error{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ai-reply{padding:16px 20px;margin-top:12px}
+.ai-reply-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ai-asked{display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:13px;margin:6px 0}
+.ai-asked img{width:56px;height:56px;object-fit:cover;border-radius:4px;border:1px solid var(--line)}
+.ai-asked p{margin:0;white-space:pre-wrap}
+.ai-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.6;margin:6px 0;user-select:text}
+.ai-extract{font-family:var(--mono);font-size:14px;background:#fbfaf5;border:1px solid #f2efe4;border-radius:6px;padding:10px}
+.google-native{display:flex;gap:10px;width:100%;max-width:300px;margin:0 auto}

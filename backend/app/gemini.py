@@ -28,7 +28,7 @@ _cooldown_until = 0.0
 
 
 class GeminiError(Exception):
-    """kind: not_configured | timeout | rate_limited | blocked | bad_output | api_error"""
+    """kind: not_configured | timeout | rate_limited | unavailable (5xx) | blocked | bad_output | api_error"""
 
     def __init__(self, kind: str, message: str):
         super().__init__(message)
@@ -61,22 +61,25 @@ def _retry_delay(resp: httpx.Response, attempt: int) -> float:
     return wait
 
 
-def ask(system: str, prompt: str, schema: dict, temperature: float = 0.4, image_jpeg: bytes | None = None) -> dict:
-    """Send one prompt (and optionally one JPEG photo), get back the JSON object Gemini produced for `schema`."""
+def ask(system: str, prompt: str, schema: dict | None, temperature: float = 0.4, image_jpeg: bytes | None = None,
+        image_mime: str = "image/jpeg", model: str | None = None) -> dict:
+    """Send one prompt (and optionally one photo), get back the JSON object Gemini produced for `schema`.
+    With schema=None the reply is free text: {"text": "..."} (the AI assistant screen)."""
     global _cooldown_until
     if not enabled():
         raise GeminiError("not_configured", "Gemini is not configured.")
     if time.monotonic() < _cooldown_until:
         raise GeminiError("rate_limited", "Gemini is busy right now (rate limit reached).")
     parts = [{"text": prompt}]
-    config_ = {"temperature": temperature, "maxOutputTokens": 4096,
-               "responseMimeType": "application/json", "responseJsonSchema": schema}
+    config_ = {"temperature": temperature, "maxOutputTokens": 4096}
+    if schema is not None:
+        config_.update(responseMimeType="application/json", responseJsonSchema=schema)
     if image_jpeg is not None:  # image first, then the instructions; high resolution for handwriting
-        parts.insert(0, {"inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(image_jpeg).decode()}})
+        parts.insert(0, {"inlineData": {"mimeType": image_mime, "data": base64.b64encode(image_jpeg).decode()}})
         config_["mediaResolution"] = "MEDIA_RESOLUTION_HIGH"
     body = {"systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": parts}], "generationConfig": config_}
-    model = config.LLM_VISION_MODEL if image_jpeg is not None else config.LLM_MODEL
+    model = model or (config.LLM_VISION_MODEL if image_jpeg is not None else config.LLM_MODEL)
     url = URL.format(model=model)
     timeout = VISION_TIMEOUT if image_jpeg is not None else TIMEOUT
     for attempt in range(MAX_ATTEMPTS):
@@ -99,7 +102,7 @@ def ask(system: str, prompt: str, schema: dict, temperature: float = 0.4, image_
             _cooldown_until = time.monotonic() + COOLDOWN
             raise GeminiError("rate_limited", "Gemini is busy right now (rate limit reached).")
         if resp.status_code in (500, 503, 504):
-            raise GeminiError("api_error", "Gemini is temporarily unavailable.")
+            raise GeminiError("unavailable", "Gemini is temporarily unavailable.")
         if resp.status_code in (401, 403) or (resp.status_code == 400 and "API key" in resp.text):
             raise GeminiError("api_error", "Gemini rejected the API key (check LLM_API_KEY).")
         if resp.status_code == 404:
@@ -107,11 +110,11 @@ def ask(system: str, prompt: str, schema: dict, temperature: float = 0.4, image_
         if resp.status_code >= 400:
             log.warning("gemini error %s: %s", resp.status_code, resp.text[:300])
             raise GeminiError("api_error", f"Gemini returned an error ({resp.status_code}).")
-        return _parse(resp)
-    raise GeminiError("api_error", "Gemini is temporarily unavailable.")  # pragma: no cover
+        return _parse(resp, as_json=schema is not None)
+    raise GeminiError("unavailable", "Gemini is temporarily unavailable.")  # pragma: no cover
 
 
-def _parse(resp: httpx.Response) -> dict:
+def _parse(resp: httpx.Response, as_json: bool = True) -> dict:
     try:
         data = resp.json()
     except ValueError:
@@ -124,6 +127,8 @@ def _parse(resp: httpx.Response) -> dict:
         reason = cand.get("finishReason", "")
         raise GeminiError("blocked" if reason not in ("", "STOP", "MAX_TOKENS") else "bad_output",
                           "Gemini returned an empty answer.")
+    if not as_json:
+        return {"text": text, "finish": cand.get("finishReason", "")}
     try:
         out = json.loads(text)
     except ValueError:

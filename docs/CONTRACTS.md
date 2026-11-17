@@ -263,3 +263,9 @@ Everything above still holds. Older MCQ-only assessments and scans need no chang
 
 **Auth**
 - `GET /auth/me` → `{role, teacher}` or `{role, student}`. Sessions expire after `SESSION_HOURS` (default 168) → 401 `session_expired`.
+
+**AI assistant (website and Android app)**
+- `POST /ai/ask` (teacher session: password or Continue with Google), multipart: `prompt` (≤ 4000 chars), `action` (`ask` | `extract` | `summarize` | `describe`), optional `image` (JPG, PNG, WebP or HEIC, ≤ 10 MB, checked by file signature). → `{text, truncated, action, model}`.
+- Errors: 400 `empty_request` | `image_required` | `bad_action`, 413 `image_too_large` | `prompt_too_long`, 415 `unsupported_image`, 503 `ai_not_configured`, 429 `ai_quota`, 503 `ai_unavailable`, 504 `ai_timeout`, 422 `ai_blocked`. Each error has `retryable` (true when trying again can help).
+- Model: `GEMINI_CHAT_MODEL` (default `LLM_VISION_MODEL`, then `LLM_MODEL`, then `gemini-3.5-flash-lite`). The key stays on the server (`LLM_API_KEY`). `GET /health` adds `gemini` (true when Gemini calls are on).
+- Google sign-in in the Android app uses the native account picker and posts its ID token to the same `POST /auth/google` (audience = the web client ID).

@@ -7,8 +7,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from app import ai_bridge, config
-from app.routes import assessments, auth, classes, insights_route, media, scans, student, teaching
+from app import ai_bridge, config, gemini
+from app.routes import ai, assessments, auth, classes, insights_route, media, scans, student, teaching
 from app.seed import seed
 
 logging.basicConfig(level=logging.INFO)
@@ -49,11 +49,11 @@ async def validation_error(_: Request, exc: RequestValidationError):
 @app.get("/api/health")
 def health():
     return {"ok": True, "ai_mode": config.AI_MODE, "ai_module_loaded": ai_bridge.ai_module_loaded(),
-            "ai_provider": ai_bridge.provider()}  # app.ai | gemini | samples (the key itself never leaves the server)
+            "ai_provider": ai_bridge.provider(), "gemini": gemini.enabled()}  # app.ai | gemini | samples (the key itself never leaves the server)
 
 
 for r in (auth.router, classes.router, classes.student_router, assessments.router, scans.router, insights_route.router,
-          student.router, teaching.router, media.router):
+          student.router, teaching.router, media.router, ai.router):
     app.include_router(r)
 
 

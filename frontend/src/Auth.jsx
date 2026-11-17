@@ -16,9 +16,9 @@ export default function Auth({ onSession, onSample, googleSignIn, serverField, n
         {note && <p className="auth-note" role="status">{note}</p>}
         <div className="role-select" role="group" aria-label="Choose your role">
           <button type="button" aria-pressed={role === 'teacher'}
-            onClick={() => setParams({ role: 'teacher' })}><Icon name="book" /> Teacher</button>
+            onClick={() => setParams(p => { p.set('role', 'teacher'); return p; })}><Icon name="book" /> Teacher</button>
           <button type="button" aria-pressed={role === 'student'}
-            onClick={() => setParams({ role: 'student' })}><Icon name="users" /> Student</button>
+            onClick={() => setParams(p => { p.set('role', 'student'); return p; })}><Icon name="users" /> Student</button>
         </div>
         <AuthForm key={role} role={role} onSession={onSession} serverField={serverField} />
         {role === 'teacher' && googleSignIn}

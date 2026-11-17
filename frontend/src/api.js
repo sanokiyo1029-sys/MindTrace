@@ -16,7 +16,7 @@ export const isNative = Boolean(window.Capacitor?.isNativePlatform?.());
 // VITE_SERVER_URL (optional, set when building the APK) is the app's default; the Server address field overrides it.
 const DEFAULT_SERVER = (import.meta.env.VITE_SERVER_URL || '').replace(/\/+$/, '');
 export const getServer = () => isNative ? (store.get('mt_server') || DEFAULT_SERVER) : '';
-export const setServer = (url) => store.set('mt_server', url.trim().replace(/\/+$/, '').replace(/\/api$/, ''));
+export const setServer = (url) => { store.set('mt_server', url.trim().replace(/\/+$/, '').replace(/\/api$/, '')); window.dispatchEvent(new Event('mt-server')); };
 const apiBase = () => getServer() ? `${getServer()}/api` : (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 // The sheet PDF is opened directly by the browser (or the phone's browser), so it authenticates with ?token= (CONTRACTS).
 export const printUrl = (id) => `${apiBase()}/assessments/${id}/print?token=${encodeURIComponent(teacherToken)}`;
@@ -68,7 +68,7 @@ async function send(path, options) {
     if (response.status === 401 && usesTeacherToken) { setTeacherToken(''); onAuthLost(); }
     const error = new Error(body?.message || `Request failed (${response.status}). Check the connection and try again.`);
     error.validationErrors = body?.questions;
-    Object.assign(error, { status: response.status, code: body?.error, current: body?.current });
+    Object.assign(error, { status: response.status, code: body?.error, current: body?.current, retryable: body?.retryable });
     throw error;
   }
   return options.raw ? response.blob() : response.json();
@@ -114,6 +114,7 @@ export const api = {
   practiceStatus: (id) => request(`/assessments/${id}/practice`),
   studentPractice: (token) => request('/student/me/practice', { headers: { Authorization: `Bearer ${token}` } }),
   submitPractice: (token, id, body) => request(`/student/me/practice/${id}`, { ...json('POST', body), headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }),
+  aiAsk: (form) => request('/ai/ask', { method: 'POST', body: form }),
   // generic call used by the offline outbox to replay a saved change
   send: (method, path, body) => request(path, json(method, body)),
 };

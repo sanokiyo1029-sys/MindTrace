@@ -16,6 +16,9 @@ const paths = {
   close: 'M18 6 6 18M6 6l12 12',
   refresh: 'M20 7v5h-5M4 17v-5h5m11-2a8 8 0 00-14-3M4 14a8 8 0 0014 3',
   clock: 'M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z',
+  spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z',
+  clip: 'M21 12.5l-8.5 8.5a5 5 0 01-7-7L14 5.5a3.5 3.5 0 015 5L10.5 19a2 2 0 01-3-3L15 8.5',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
 };
 
 export default function Icon({ name, size = 19 }) {
