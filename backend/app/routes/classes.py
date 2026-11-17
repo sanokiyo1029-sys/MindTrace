@@ -22,5 +22,5 @@ def list_students(class_id: str, teacher: Teacher = Depends(current_teacher), db
     c = db.get(ClassRoom, class_id)
     if not c or c.teacher_id != teacher.id:
         raise api_error(404, "not_found", "Class not found.")
-    rows = db.scalars(select(Student).where(Student.class_id == class_id).order_by(Student.student_code))
+    rows = db.scalars(select(Student).where(Student.class_id == class_id).order_by(Student.roll_no, Student.student_code))
     return [serialize.student(s) for s in rows]

@@ -7,7 +7,7 @@ Read first: `docs/PROBLEM_STATEMENT.md`, `docs/CONTRACTS.md`, `AGENTS.md`. **How
 
 ## Stack
 
-Python 3.11 · FastAPI · SQLite (SQLModel or SQLAlchemy) · ReportLab + `qrcode` (PDF) · OpenCV + `pyzbar` or `cv2.QRCodeDetector` (scan) · Uvicorn
+Python 3.11 · FastAPI · SQLite (SQLModel or SQLAlchemy) · ReportLab (PDF) · Gemini + OpenCV bubble reader (scan; QR was replaced by roll numbers, see docs/CONTRACTS.md §4–7) · Uvicorn
 
 ```
 backend/
@@ -18,7 +18,7 @@ backend/
     routes/            # auth.py, assessments.py, scans.py, insights.py, student.py
     sheet_layout.json  # ONE source of truth for PDF + OMR coordinates (mm)
     pdf.py             # sheet PDF generation
-    scanner/           # qr.py, align.py, omr.py
+    scanner/           # gemini_reader.py, align.py, omr.py, pipeline.py
     insights.py        # plain-Python aggregation (no AI)
     ai/                # ← Research owns this; you just import it
   requirements.txt
@@ -55,7 +55,7 @@ Built and passing tests on **synthetic** phone photos (tilt, perspective, dim li
 
 ### B4 · Scanner (H05–H09) → milestone M2 ⚠️ the hardest part, start early
 - [x] `POST /assessments/{id}/scans` (multipart `image`)
-- [x] `qr.py`: decode QR → `sheet_id` → look up sheet. Fail → `rejected / qr_not_found` (never guess a student)
+- [x] ~~`qr.py`~~ replaced: Gemini reads the handwritten roll number → matched to the assessment's class roster. Unclear/unknown/ambiguous → teacher review (never guess a student)
 - [x] `align.py`: find the 4 corner squares (threshold → contours → 4 biggest squares) → perspective-warp to a fixed size (e.g. 2100×2970 px = 10 px/mm)
 - [x] Quality checks: blur (variance of Laplacian), darkness (mean brightness), page not found → `rejected` with a reason
 - [x] `omr.py`: for each bubble, crop by layout, adaptive threshold, compute fill ratio

@@ -1,21 +1,38 @@
+"""Scanning completed papers: photo -> Gemini reads roll number + marks -> roster match -> teacher review -> confirm.
+
+Every scan starts in needs_review: the teacher checks the student and the answers before anything counts.
+Scores and insights are computed later from the confirmed answers and the approved answer key (deterministic).
+"""
+import threading
+
 import cv2
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import serialize
+from app import gemini, rolls, serialize
 from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
-from app.models import Assessment, Scan, Sheet, Teacher
+from app.layout import paper_code
+from app.models import Assessment, ClassRoom, Scan, Sheet, Student, Teacher
 from app.routes.common import current_scans, own_assessment, sheets_of
-from app.scanner import omr, pipeline
+from app.scanner import gemini_reader, omr, pipeline
 from app.security import current_teacher
 
 router = APIRouter(prefix="/api", tags=["scans"])
 SCAN_DIR = MEDIA_DIR / "scans"
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+_attach_lock = threading.Lock()  # one decision at a time about which scan is a student's live one
+
+IDENTITY_WARNINGS = {
+    "unreadable": "Roll number could not be read. Enter it manually or retake the photo.",
+    "unknown": "Roll number {roll} isn't on the {cls} roster. Check it, or choose the student.",
+    "ambiguous": "Roll number {roll} could be more than one student. Choose the right one.",
+}
 
 
 def _save(img, name: str, max_side: int = 1600) -> str:
@@ -27,66 +44,159 @@ def _save(img, name: str, max_side: int = 1600) -> str:
     return f"/api/media/scans/{name}"
 
 
-def _reject(db: Session, a: Assessment, scan_id: str, reason: str, img, sheet_id: str | None = None) -> dict:
-    sc = Scan(id=scan_id, assessment_id=a.id, sheet_id=sheet_id, status="rejected", reject_reason=reason,
-              answers=[], image_url=_save(img, f"{scan_id}.jpg") if img is not None else None, is_current=False)
-    db.add(sc)
-    db.commit()
-    return serialize.scan(db, sc)
+def _jpeg(img, max_side: int = 2000) -> bytes:
+    h, w = img.shape[:2]
+    if max(h, w) > max_side:
+        s = max_side / max(h, w)
+        img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+    return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
+
+
+def _roster(db: Session, class_id: str) -> list[Student]:
+    return list(db.scalars(select(Student).where(Student.class_id == class_id)))
+
+
+def _sheet_for(db: Session, a: Assessment, student: Student) -> Sheet:
+    """The student's paper record for this assessment (made at print time; made now if they joined later)."""
+    sh = db.scalar(select(Sheet).where(Sheet.assessment_id == a.id, Sheet.student_id == student.id))
+    if not sh:
+        sh = Sheet(sheet_id=new_id("s", 10), short_code=f"MT-{len(sheets_of(db, a.id)) + 1:03d}",
+                   assessment_id=a.id, student_id=student.id)
+        db.add(sh)
+        db.flush()
+    return sh
+
+
+def _attach(db: Session, sc: Scan, sheet: Sheet | None, replace: bool) -> Scan | None:
+    """Make `sc` the student's live scan. A newer upload replaces an unconfirmed one; a CONFIRMED one is only
+    replaced on request. Returns the confirmed scan that blocked it (sc then becomes a duplicate), else None."""
+    existing = db.scalar(select(Scan).where(Scan.sheet_id == sheet.sheet_id, Scan.is_current.is_(True),
+                                            Scan.id != sc.id)) if sheet else None
+    if existing is not None:
+        if existing.status == "accepted" and not replace:
+            sc.sheet_id, sc.is_current, sc.status, sc.duplicate_of = sheet.sheet_id, False, "duplicate", existing.id
+            return existing
+        existing.is_current = False
+        db.flush()
+    sc.sheet_id = sheet.sheet_id if sheet else None
+    sc.is_current, sc.duplicate_of = True, None
+    if sc.status == "duplicate":
+        sc.status = "needs_review"
+    return None
+
+
+def _commit(db: Session):
+    try:
+        db.commit()
+    except IntegrityError:  # backstop: the database allows one live scan per student
+        db.rollback()
+        raise api_error(409, "scan_conflict", "Another scan for this student was saved at the same moment. "
+                                              "Refresh the review queue.")
+
+
+def _identity_warning(identity: dict, roll: str | None, cls: ClassRoom) -> list[dict]:
+    status = identity.get("status")
+    if status in IDENTITY_WARNINGS:
+        return [{"code": f"roll_{status}", "message": IDENTITY_WARNINGS[status].format(roll=roll, cls=cls.name)}]
+    if status == "matched" and not identity.get("exact"):
+        return [{"code": "roll_loose_match", "message": f"Roll number written as {roll}; matched to the roster "
+                                                       "ignoring leading zeros. Check the student."}]
+    return []
 
 
 @router.post("/assessments/{assessment_id}/scans")
-async def upload_scan(assessment_id: str, image: UploadFile = File(...), short_code: str | None = Form(default=None),
-                      replace: bool = False, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
+def upload_scan(assessment_id: str, image: UploadFile = File(...), roll_number: str | None = Form(default=None),
+                replace: bool = False, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
     a = own_assessment(db, teacher, assessment_id)
     if a.status not in ("printed", "scanning", "confirmed"):
-        raise api_error(409, "not_printed", "Print the sheets before scanning.")
-    scan_id = new_id("sc")
-    img = pipeline.decode_image(await image.read())
+        raise api_error(409, "not_printed", "Print the papers before scanning.")
+    if image.content_type and not image.content_type.startswith("image/"):
+        raise api_error(415, "not_an_image", "That file isn't a photo. Upload a JPG or PNG of the paper.")
+    data = image.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise api_error(413, "too_large", "That photo is over 15 MB. Retake it or send a smaller copy.")
+    img = pipeline.decode_image(data)
     if img is None:
-        return _reject(db, a, scan_id, "page_not_found", None)
+        raise api_error(400, "bad_image", "Couldn't open that photo. Try again with a JPG or PNG.")
 
-    page, sid, reason = pipeline.locate(img)
-    sheet = db.get(Sheet, sid) if sid else None
-    if sheet is None and short_code:  # QR unreadable: teacher typed the printed code
-        sheet = db.scalar(select(Sheet).where(Sheet.assessment_id == a.id, Sheet.short_code == short_code.strip().upper()))
-    if sid and (sheet is None or sheet.assessment_id != a.id):
-        return _reject(db, a, scan_id, "unknown_sheet", img)
-    if sheet is None:
-        return _reject(db, a, scan_id, reason or "qr_not_found", img)
-    if page is None:  # we know whose sheet it is, but can't read the bubbles reliably
-        return _reject(db, a, scan_id, reason or "page_not_found", img, sheet.sheet_id)
-
-    existing = db.scalar(select(Scan).where(Scan.sheet_id == sheet.sheet_id, Scan.is_current.is_(True)))
-    if existing and not replace:
-        sc = Scan(id=scan_id, assessment_id=a.id, sheet_id=sheet.sheet_id, status="duplicate",
-                  duplicate_of=existing.id, answers=existing.answers, image_url=existing.image_url, is_current=False)
-        db.add(sc)
-        db.commit()
-        return serialize.scan(db, sc)
-
+    cls = db.get(ClassRoom, a.class_id)
     qs = serialize.questions_of(db, a.id)
-    reads = pipeline.read_answers(page, len(qs))
-    crops = omr.crops(page, len(qs))
+    qids = [q.id for q in qs]
+    scan_id = new_id("sc")
+    page, quality = pipeline.locate(img)  # straightened page, or why not
+    shown = page if page is not None else img
+    warnings: list[dict] = []
+    if page is None:
+        warnings.append({"code": quality, "message": {
+            "too_dark": "The photo is too dark to straighten. Check it carefully, or retake it in better light.",
+            "too_blurry": "The photo is blurry. Check it carefully, or retake it holding the phone steady.",
+        }.get(quality, "The four corner squares weren't all found. Check the photo, or retake it with the whole "
+                       "page in view.")})
+    bubble = pipeline.read_answers(page, len(qs)) if page is not None else None
+    crops = omr.crops(page, len(qs)) if page is not None else None
+
+    # 1. read the paper: Gemini first; the bubble reader cross-checks it and covers for it when it's unavailable
+    read, extracted_by, roll_text = None, None, None
+    if gemini.enabled():
+        try:
+            read = gemini_reader.extract(_jpeg(shown), title=a.title, class_name=cls.name,
+                                         paper_code=paper_code(a.id), question_ids=qids)
+            extracted_by, roll_text = "gemini", read["roll_number"]
+            warnings += read["warnings"]
+        except gemini.GeminiError as exc:
+            warnings.append({"code": "ai_output_invalid" if exc.kind == "bad_output" else "ai_unavailable",
+                             "message": f"{exc.message} Read the roll number and answers from the photo below."})
+    else:
+        warnings.append({"code": "ai_off", "message": "Gemini isn't set up, so enter the roll number from the photo "
+                                                     "and check every answer."})
     answers = []
-    for i, (q, r) in enumerate(zip(qs, reads)):
-        row, why = crops[i]
-        answers.append({
-            "question_id": q.id, "detected": r["detected"], "state": r["state"], "confidence": r["confidence"],
-            "fill": r["fill"],
-            "final": r["detected"] if r["state"] == "single" else ("blank" if r["state"] == "blank" else None),
-            "crop_url": _save(row, f"{scan_id}_q{i + 1}.jpg"),
-            "reasoning_crop_url": _save(why, f"{scan_id}_q{i + 1}_why.jpg"),
-        })
-    clear = all(x["state"] == "single" for x in answers)
-    if existing:  # explicit re-scan replaces the old one
-        existing.is_current = False
-    sc = Scan(id=scan_id, assessment_id=a.id, sheet_id=sheet.sheet_id, status="accepted" if clear else "needs_review",
-              answers=answers, image_url=_save(page, f"{scan_id}.jpg"), is_current=True)
-    db.add(sc)
-    if a.status == "printed":
-        a.status = "scanning"
-    db.commit()
+    for i, qid in enumerate(qids):
+        g = read["answers"][i] if read else None
+        b = bubble[i] if bubble else None
+        if g is None and b is None:
+            ans = {"question_id": qid, "detected": None, "state": "unreadable", "note": "Enter this answer from the photo."}
+            extracted_by = extracted_by or "manual"
+        elif g is None:
+            ans = {"question_id": qid, "detected": b["detected"] if b["state"] == "single" else None,
+                   "state": b["state"], "note": "Read by the bubble reader."}
+            extracted_by = extracted_by or "bubble_reader"
+        else:
+            ans = {k: g[k] for k in ("question_id", "detected", "state", "note")}
+            clear = ("single", "blank", "multiple")
+            if b and g["state"] in clear and b["state"] in clear and (g["state"], g["detected"]) != (b["state"], b["detected"]):
+                said = {"blank": "no mark", "multiple": "more than one mark"}
+                ans.update(state="ambiguous", detected=None,
+                           note=f"Gemini read {g['detected'] or said[g['state']]}, the bubble reader read "
+                                f"{b['detected'] or said[b['state']]}. Check the photo.")
+        ans["final"] = ans["detected"] if ans["state"] == "single" else ("blank" if ans["state"] == "blank" else None)
+        ans["confidence"] = None  # model self-reports aren't calibrated; the teacher confirms instead
+        if crops:
+            ans["crop_url"] = _save(crops[i][0], f"{scan_id}_q{i + 1}.jpg")
+            ans["reasoning_crop_url"] = _save(crops[i][1], f"{scan_id}_q{i + 1}_why.jpg")
+        answers.append(ans)
+    if any(x["state"] in ("multiple", "ambiguous", "unreadable") for x in answers) and extracted_by == "gemini":
+        warnings.append({"code": "answers_unclear", "message": "Some answers are unclear. Choose them from the photo."})
+
+    # 2. who is it? the teacher's typed roll number wins; matching only looks at this assessment's class
+    if roll_number and roll_number.strip():
+        roll_text = rolls.normalize(roll_number)
+    identity = rolls.match(roll_text, _roster(db, a.class_id))
+    warnings = [w for w in warnings if w["code"] != "roll_unreadable"] + _identity_warning(identity, roll_text, cls)
+    student = db.get(Student, identity["student_id"]) if identity["status"] == "matched" else None
+
+    # 3. store it for review; one live scan per student
+    sc = Scan(id=scan_id, assessment_id=a.id, status="needs_review", answers=answers, image_url=_save(shown, f"{scan_id}.jpg"),
+              roll_number=roll_text, extracted_by=extracted_by, identity=identity, warnings=warnings)
+    with _attach_lock:
+        db.add(sc)
+        sheet = _sheet_for(db, a, student) if student else None
+        blocker = _attach(db, sc, sheet, replace)
+        if blocker is not None:
+            sc.warnings = warnings + [{"code": "already_confirmed", "message": f"{student.display_name} already has a "
+                                       "confirmed paper. Choose Replace to use this photo instead."}]
+        if a.status == "printed":
+            a.status = "scanning"
+        _commit(db)
     return serialize.scan(db, sc)
 
 
@@ -95,15 +205,18 @@ def scan_progress(assessment_id: str, teacher: Teacher = Depends(current_teacher
     a = own_assessment(db, teacher, assessment_id)
     total = len(sheets_of(db, a.id))
     current = current_scans(db, a.id)
-    latest_ok = {s.sheet_id: s.created_at for s in current}
-    rejected = [s for s in db.scalars(select(Scan).where(Scan.assessment_id == a.id, Scan.status == "rejected")
-                                      .order_by(Scan.created_at.desc()))
-                if not (s.sheet_id and s.sheet_id in latest_ok and latest_ok[s.sheet_id] > s.created_at)][:5]
     accepted = sum(1 for s in current if s.status == "accepted")
     review = sum(1 for s in current if s.status == "needs_review")
-    return {"total": total, "accepted": accepted, "needs_review": review, "remaining": max(total - accepted - review, 0),
+    recent = list(db.scalars(select(Scan).where(Scan.assessment_id == a.id, Scan.status.in_(("rejected", "duplicate")))
+                             .order_by(Scan.created_at.desc()).limit(20)))
+    live = {s.id for s in current}
+    dups = [s for s in recent if s.status == "duplicate" and s.duplicate_of in live][:5]
+    return {"total": total, "accepted": accepted, "needs_review": review,
+            "remaining": max(total - sum(1 for s in current if s.sheet_id and s.status in ("accepted", "needs_review")), 0),
             "scans": [serialize.scan(db, s) for s in sorted(current, key=lambda s: s.created_at, reverse=True)],
-            "rejected": [serialize.scan(db, s) for s in rejected]}
+            "duplicates": [serialize.scan(db, s) for s in dups],
+            "rejected": [serialize.scan(db, s) for s in recent
+                         if s.status == "rejected" and s.reject_reason != "discarded_by_teacher"][:5]}
 
 
 class ReviewAnswer(BaseModel):
@@ -114,6 +227,10 @@ class ReviewAnswer(BaseModel):
 class ReviewBody(BaseModel):
     answers: list[ReviewAnswer] = []
     confirmed: bool = True
+    student_id: str | None = None   # the teacher picks the student...
+    roll_number: str | None = None  # ...or types the roll number from the photo
+    replace: bool = False           # use this paper even though the student already has a confirmed one
+    discard: bool = False           # not a paper of this assessment: take it out of the queue
 
 
 @router.patch("/scans/{scan_id}/review")
@@ -121,24 +238,57 @@ def review(scan_id: str, body: ReviewBody, teacher: Teacher = Depends(current_te
     sc = db.get(Scan, scan_id)
     if not sc:
         raise api_error(404, "not_found", "Scan not found.")
-    own_assessment(db, teacher, sc.assessment_id)
-    if not sc.is_current:
-        raise api_error(409, "not_current", "This scan was replaced or rejected. Review the current one.")
-    fixes = {x.question_id: x.final.strip().upper() if x.final.lower() != "blank" else "blank" for x in body.answers}
-    bad = [v for v in fixes.values() if v not in ("A", "B", "C", "D", "blank")]
-    if bad:
-        raise api_error(400, "bad_answer", "Answers must be A, B, C, D or blank.")
-    answers = []
-    for x in sc.answers:
-        x = dict(x)
-        if x["question_id"] in fixes:
-            x["final"] = fixes[x["question_id"]]
-            x["reviewed"] = True
-        answers.append(x)
-    sc.answers = answers
-    if body.confirmed:
-        if any(x.get("final") is None for x in answers):
-            raise api_error(400, "incomplete", "Choose an answer (or blank) for every flagged question.")
-        sc.status = "accepted"
-    db.commit()
+    a = own_assessment(db, teacher, sc.assessment_id)
+    if body.discard:
+        sc.status, sc.reject_reason, sc.is_current = "rejected", "discarded_by_teacher", False
+        db.commit()
+        return serialize.scan(db, sc)
+    if sc.status == "duplicate" and not body.replace:
+        raise api_error(409, "already_confirmed", "This student already has a confirmed paper. "
+                                                  "Choose Replace to use this photo instead.")
+    if not sc.is_current and sc.status != "duplicate":
+        raise api_error(409, "not_current", "This scan was replaced or discarded. Review the current one.")
+
+    with _attach_lock:
+        # identity: chosen student or typed roll number, always within the assessment's class
+        student = None
+        if body.student_id:
+            student = db.get(Student, body.student_id)
+            if not student or student.class_id != a.class_id:
+                raise api_error(400, "wrong_class", "That student isn't in this assessment's class.")
+            sc.identity = {"status": "matched", "student_id": student.id, "candidates": [student.id], "by": "teacher"}
+        elif body.roll_number is not None:
+            sc.roll_number = rolls.normalize(body.roll_number) or None
+            sc.identity = rolls.match(sc.roll_number, _roster(db, a.class_id))
+            if sc.identity["status"] != "matched":
+                cls = db.get(ClassRoom, a.class_id)
+                raise api_error(400, f"roll_{sc.identity['status']}", _identity_warning(sc.identity, sc.roll_number, cls)[0]["message"])
+            student = db.get(Student, sc.identity["student_id"])
+        if student is not None or (sc.status == "duplicate" and body.replace):
+            if student is None:
+                student = db.get(Student, db.get(Sheet, sc.sheet_id).student_id)
+            blocker = _attach(db, sc, _sheet_for(db, a, student), body.replace)
+            if blocker is not None:
+                db.rollback()
+                raise api_error(409, "already_confirmed", f"{student.display_name} already has a confirmed paper. "
+                                                          "Choose Replace to use this photo instead.")
+            sc.warnings = [w for w in (sc.warnings or []) if not w["code"].startswith("roll_") and w["code"] != "already_confirmed"]
+
+        fixes = {x.question_id: x.final.strip().upper() if x.final.lower() != "blank" else "blank" for x in body.answers}
+        if any(v not in ("A", "B", "C", "D", "blank") for v in fixes.values()):
+            raise api_error(400, "bad_answer", "Answers must be A, B, C, D or blank.")
+        answers = []
+        for x in sc.answers:
+            x = dict(x)
+            if x["question_id"] in fixes:
+                x["final"], x["reviewed"] = fixes[x["question_id"]], True
+            answers.append(x)
+        sc.answers = answers
+        if body.confirmed:
+            if not sc.sheet_id or not sc.is_current:
+                raise api_error(400, "no_student", "Choose the student (or enter the roll number) before confirming.")
+            if any(x.get("final") is None for x in answers):
+                raise api_error(400, "incomplete", "Choose an answer (or blank) for every flagged question.")
+            sc.status = "accepted"
+        _commit(db)
     return serialize.scan(db, sc)

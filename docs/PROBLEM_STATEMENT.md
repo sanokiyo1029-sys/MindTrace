@@ -34,9 +34,9 @@
 
 1. **Enter lesson.** The teacher types or pastes the concepts taught today.
 2. **Generate.** MindTrace drafts 1–5 MCQs. Every wrong option is tagged with the misconception it usually signals. The teacher edits and approves.
-3. **Print.** Each student gets an A4 sheet with a random QR sheet ID, answer bubbles and a "why did you choose this?" box.
+3. **Print.** Every student gets the same A4 paper: roll-number boxes at the very top, answer bubbles and a "why did you choose this?" box. No names or QR codes.
 4. **Answer on paper.** Students need no phone, no login and no internet.
-5. **Scan.** The teacher scans the sheets with one phone. QR identifies the sheet, OMR reads the bubbles, and unclear marks go to a review queue.
+5. **Scan.** The teacher selects the assessment and photographs each paper with one phone. Gemini reads the handwritten roll number and the marked bubbles; the roll number is matched to that class roster; every paper goes to a quick teacher check, where unclear roll numbers and marks must be decided by the teacher.
 6. **Insight.** The class report shows the most common *possible* misconceptions, the evidence behind each, a 5-minute corrective activity and a fresh follow-up question.
 7. **Retest.** The follow-up quiz shows whether the class improved.
 

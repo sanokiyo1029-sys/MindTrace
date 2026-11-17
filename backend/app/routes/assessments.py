@@ -131,12 +131,11 @@ def print_sheets(assessment_id: str, teacher: Teacher = Depends(current_teacher)
     if a.status == "approved":
         a.status = "printed"
     db.commit()
-    by_id = {s.id: s for s in students}
-    sheets = [{"sheet_id": sh.sheet_id, "short_code": sh.short_code,
-               "student_name": by_id[sh.student_id].display_name if sh.student_id in by_id else "",
-               "class_name": cls.name} for sh in sheets_of(db, a.id)]
-    pdf = build_pdf(assessment={"title": a.title, "topic": a.topic},
-                    questions=[serialize.question(q) for q in serialize.questions_of(db, a.id)], sheets=sheets)
+    # Sheets stay as internal per-student paper records (they link scans and results to students), but the
+    # printed copies are identical: no names, no QR. Students write their roll number at the top.
+    pdf = build_pdf(assessment={"id": a.id, "title": a.title, "topic": a.topic, "class_name": cls.name},
+                    questions=[serialize.question(q) for q in serialize.questions_of(db, a.id)],
+                    copies=len(sheets_of(db, a.id)))
     return Response(pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="MindTrace_{a.id}.pdf"'})
 
@@ -198,7 +197,7 @@ def results(assessment_id: str, teacher: Teacher = Depends(current_teacher), db:
         sc = by_sheet.get(sh.sheet_id)
         answers = sc.answers if sc else []
         correct = sum(1 for x in answers if qs.get(x["question_id"], {}).get("answer") == x.get("final"))
-        out.append({"student": serialize.student(stu), "short_code": sh.short_code,
+        out.append({"student": serialize.student(stu), "roll_no": stu.roll_no, "short_code": sh.short_code,
                     "scan_status": sc.status if sc else "missing", "correct": correct, "total": len(qs),
                     "answers": [{"question_id": x["question_id"], "final": x.get("final")} for x in answers]})
     return out

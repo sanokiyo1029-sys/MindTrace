@@ -6,6 +6,7 @@ Every failure becomes a GeminiError with a short message the teacher can read; c
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -39,8 +40,11 @@ def enabled() -> bool:
     return config.AI_MODE == "live" and config.LLM_PROVIDER == "gemini" and bool(config.LLM_API_KEY)
 
 
-def _post(url: str, body: dict) -> httpx.Response:  # one seam for tests
-    return httpx.post(url, json=body, timeout=TIMEOUT,
+VISION_TIMEOUT = httpx.Timeout(45.0, connect=8.0)  # reading a page photo takes longer than text
+
+
+def _post(url: str, body: dict, timeout: httpx.Timeout = TIMEOUT) -> httpx.Response:  # one seam for tests
+    return httpx.post(url, json=body, timeout=timeout,
                       headers={"x-goog-api-key": config.LLM_API_KEY, "Content-Type": "application/json"})
 
 
@@ -57,29 +61,33 @@ def _retry_delay(resp: httpx.Response, attempt: int) -> float:
     return wait
 
 
-def ask(system: str, prompt: str, schema: dict, temperature: float = 0.4) -> dict:
-    """Send one prompt, get back the JSON object Gemini produced for `schema`."""
+def ask(system: str, prompt: str, schema: dict, temperature: float = 0.4, image_jpeg: bytes | None = None) -> dict:
+    """Send one prompt (and optionally one JPEG photo), get back the JSON object Gemini produced for `schema`."""
     global _cooldown_until
     if not enabled():
         raise GeminiError("not_configured", "Gemini is not configured.")
     if time.monotonic() < _cooldown_until:
         raise GeminiError("rate_limited", "Gemini is busy right now (rate limit reached).")
-    body = {
-        "systemInstruction": {"parts": [{"text": system}]},
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": 4096,
-                             "responseMimeType": "application/json", "responseJsonSchema": schema},
-    }
-    url = URL.format(model=config.LLM_MODEL)
+    parts = [{"text": prompt}]
+    config_ = {"temperature": temperature, "maxOutputTokens": 4096,
+               "responseMimeType": "application/json", "responseJsonSchema": schema}
+    if image_jpeg is not None:  # image first, then the instructions; high resolution for handwriting
+        parts.insert(0, {"inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(image_jpeg).decode()}})
+        config_["mediaResolution"] = "MEDIA_RESOLUTION_HIGH"
+    body = {"systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": parts}], "generationConfig": config_}
+    model = config.LLM_VISION_MODEL if image_jpeg is not None else config.LLM_MODEL
+    url = URL.format(model=model)
+    timeout = VISION_TIMEOUT if image_jpeg is not None else TIMEOUT
     for attempt in range(MAX_ATTEMPTS):
         started = time.monotonic()
         try:
-            resp = _post(url, body)
+            resp = _post(url, body, timeout)
         except httpx.TimeoutException:
             raise GeminiError("timeout", "Gemini took too long to answer.") from None
         except httpx.HTTPError as exc:
             raise GeminiError("api_error", f"Could not reach Gemini ({type(exc).__name__}).") from None
-        log.info("gemini %s -> %s in %.1fs", config.LLM_MODEL, resp.status_code, time.monotonic() - started)
+        log.info("gemini %s -> %s in %.1fs", model, resp.status_code, time.monotonic() - started)  # never the content
 
         if resp.status_code in RETRYABLE and attempt < MAX_ATTEMPTS - 1:
             wait = _retry_delay(resp, attempt)
@@ -95,7 +103,7 @@ def ask(system: str, prompt: str, schema: dict, temperature: float = 0.4) -> dic
         if resp.status_code in (401, 403) or (resp.status_code == 400 and "API key" in resp.text):
             raise GeminiError("api_error", "Gemini rejected the API key (check LLM_API_KEY).")
         if resp.status_code == 404:
-            raise GeminiError("api_error", f"Gemini model '{config.LLM_MODEL}' was not found (check LLM_MODEL).")
+            raise GeminiError("api_error", f"Gemini model '{model}' was not found (check LLM_MODEL / LLM_VISION_MODEL).")
         if resp.status_code >= 400:
             log.warning("gemini error %s: %s", resp.status_code, resp.text[:300])
             raise GeminiError("api_error", f"Gemini returned an error ({resp.status_code}).")

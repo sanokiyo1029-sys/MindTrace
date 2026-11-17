@@ -17,8 +17,8 @@ In STEM classrooms, teachers can mark a paper quiz right or wrong, but with 30+ 
 
 ```
 Teacher types concepts → AI drafts MCQs (each wrong option = a known misconception) → teacher approves
-→ personalised A4 sheets with QR → students answer on paper → teacher scans with one phone
-→ QR + OMR read the answers → unclear marks go to review → class report: possible misconceptions,
+→ identical A4 papers, roll number written at the top → students answer on paper → teacher scans with one phone
+→ Gemini reads the roll number and marks → teacher confirms each paper → class report: possible misconceptions,
   evidence, a 5-minute teaching activity → follow-up quiz to check improvement
 ```
 
@@ -26,8 +26,8 @@ Teacher types concepts → AI drafts MCQs (each wrong option = a known misconcep
 |---|---|
 | Web app (teacher + student, mobile scanner) | React + Vite |
 | API | Python · FastAPI · SQLite |
-| Printable sheets | ReportLab + QR |
-| Scanning | OpenCV (page alignment + bubble reading) + QR decode |
+| Printable papers | ReportLab (roll-number boxes, no QR) |
+| Scanning | Gemini (roll number + marks, JSON schema) + OpenCV bubble reader as cross-check / fallback |
 | AI | LLM for question drafting, teaching suggestions, follow-ups (with an offline fixtures mode) |
 
 ## Team
@@ -75,7 +75,7 @@ cd frontend && npm install && npm run dev
 _Update honestly before submission._
 
 - [ ] Teacher creates and approves a quiz
-- [ ] Printable QR sheets
+- [ ] Printable roll-number papers
 - [ ] Live phone scan → correct sheet + answers
 - [ ] Review of unclear marks
 - [ ] Class misconception report + teaching activity

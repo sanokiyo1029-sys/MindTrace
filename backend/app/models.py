@@ -1,7 +1,7 @@
 """Tables. Shapes returned by the API are built in app/serialize.py to match docs/CONTRACTS.md."""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -29,10 +29,14 @@ class ClassRoom(Base):
 
 class Student(Base):
     __tablename__ = "students"
+    __table_args__ = (UniqueConstraint("class_id", "roll_no", name="ux_students_class_roll"),)
     id: Mapped[str] = mapped_column(String, primary_key=True)
     class_id: Mapped[str] = mapped_column(ForeignKey("classes.id"))
     display_name: Mapped[str] = mapped_column(String)
-    student_code: Mapped[str] = mapped_column(String, unique=True)
+    student_code: Mapped[str] = mapped_column(String, unique=True)  # login ID, unique school-wide ("7A-01")
+    # What the student writes at the top of the paper. A string (keeps leading zeros, allows "12B");
+    # unique within a class only, so two classes can both have roll "01".
+    roll_no: Mapped[str | None] = mapped_column(String, nullable=True)
     pin_hash: Mapped[str] = mapped_column(String)
 
 
@@ -70,13 +74,17 @@ class Scan(Base):
     __tablename__ = "scans"
     id: Mapped[str] = mapped_column(String, primary_key=True)
     assessment_id: Mapped[str] = mapped_column(ForeignKey("assessments.id"))
-    sheet_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    sheet_id: Mapped[str | None] = mapped_column(String, nullable=True)  # set once the student is known
     status: Mapped[str] = mapped_column(String)            # accepted|needs_review|duplicate|rejected
     reject_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     answers: Mapped[list] = mapped_column(JSON, default=list)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     duplicate_of: Mapped[str | None] = mapped_column(String, nullable=True)
-    is_current: Mapped[bool] = mapped_column(Boolean, default=False)  # the one live scan per sheet
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)  # the one live scan per student
+    roll_number: Mapped[str | None] = mapped_column(String, nullable=True)  # as written on the paper (or typed)
+    extracted_by: Mapped[str | None] = mapped_column(String, nullable=True)  # gemini|bubble_reader|manual|qr_legacy
+    identity: Mapped[dict | None] = mapped_column(JSON, nullable=True)      # {status, candidates}
+    warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)      # [{code, message}]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

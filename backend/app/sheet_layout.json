@@ -1,5 +1,5 @@
 {
-  "_comment": "ONE source of truth for printing AND scanning. All values in mm from the top-left of an A4 page. Change it = reprint the test pack.",
+  "_comment": "ONE source of truth for printing AND scanning. All values in mm from the top-left of an A4 page. Change it = reprint the test pack. No QR: students write their roll number in roll_box.",
   "page_mm": [
     210,
     297
@@ -24,15 +24,24 @@
       282
     ]
   },
-  "qr": {
-    "x": 160,
-    "y": 20,
-    "size": 30
-  },
-  "header": {
+  "roll_box": {
     "x": 25,
-    "y": 22
+    "y": 28,
+    "w": 12,
+    "h": 15,
+    "count": 5
   },
+  "class_box": {
+    "x": 97,
+    "y": 28,
+    "w": 46,
+    "h": 15
+  },
+  "page_info": {
+    "x": 150,
+    "y": 28
+  },
+  "title_y_mm": 50,
   "questions_top_mm": 62,
   "questions_bottom_mm": 268,
   "max_questions": 5,

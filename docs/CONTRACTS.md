@@ -66,18 +66,19 @@ Sample JSON for every shape lives in `tests/fixtures/` (research owns it). Front
 ## 4. Student & Sheet
 
 ```json
-{ "id": "st_01", "class_id": "cl_7a", "display_name": "Aarav", "student_code": "7A-01" }
+{ "id": "st_01", "class_id": "cl_7a", "display_name": "Aarav", "student_code": "7A-01", "roll_no": "01" }
 ```
 ```json
 { "sheet_id": "s_8f3k2a9x", "short_code": "MT-001", "assessment_id": "as_001", "student_id": "st_01" }
 ```
-- **QR payload = `MT:<sheet_id>` only.** No names or personal data in the QR.
-- `sheet_id` is random (not sequential). `short_code` is printed for manual entry if the QR fails.
+- **`roll_no`** is what the student writes at the top of the paper. Always a **string** (keeps leading zeros, allows `12B`), **unique within a class** only, so two classes can both have `01`. `student_code` stays the school-wide login ID.
+- A **sheet** is the internal per-student paper record for one assessment (made at print time, or when a late joiner's paper is scanned). It links scans and results to the student. Nothing about it is printed.
+- Printed copies are **identical**: no names, no QR, no per-student code. Identity comes only from the handwritten roll number, matched against **the selected assessment's class roster**.
 - Fictional student names only, never real minors' data.
 
-## 5. Sheet layout (backend owns; PDF and OMR must share it)
+## 5. Sheet layout (backend owns; PDF and the bubble reader share it)
 
-`backend/app/sheet_layout.json` holds page size, the 4 corner marker positions, QR box, and for each question the bubble centres (A–D) and the reasoning box, all in **mm from top-left of A4**. PDF generation and OMR both read this one file. Never hard-code coordinates twice.
+`backend/app/sheet_layout.json` holds page size, the 4 corner marker positions, the **roll-number boxes, class/section box and page/paper-code block at the top**, and for each question the bubble centres (A–D) and the reasoning box, all in **mm from top-left of A4**. PDF generation and the bubble reader both read this one file. Never hard-code coordinates twice. One page per paper (`Page 1 of 1`); the printed **paper code** is the assessment id without its prefix (e.g. `as_e1wscjn4` → `E1WSCJN4`).
 
 ## 6. ScanResult (response of `POST /assessments/{id}/scans`)
 
@@ -88,40 +89,47 @@ Sample JSON for every shape lives in `tests/fixtures/` (research owns it). Front
   "reject_reason": null,
   "sheet_id": "s_8f3k2a9x",
   "short_code": "MT-001",
-  "student": { "id": "st_01", "display_name": "Aarav" },
+  "student": { "id": "st_01", "display_name": "Aarav", "roll_no": "01" },
+  "roll_number": { "read": "01", "status": "matched", "candidates": ["st_01"] },
+  "extracted_by": "gemini",
+  "warnings": [ { "code": "answers_unclear", "message": "Some answers are unclear. Choose them from the photo." } ],
   "answers": [
     {
       "question_id": "q_001",
-      "detected": "A",
-      "state": "single",
-      "confidence": 0.96,
-      "fill": { "A": 0.61, "B": 0.05, "C": 0.04, "D": 0.03 },
+      "detected": null,
+      "state": "multiple",
+      "note": "",
+      "confidence": null,
       "final": null,
-      "crop_url": "/api/media/scans/sc_001_q1.png",
-      "reasoning_crop_url": "/api/media/scans/sc_001_q1_why.png"
+      "crop_url": "/api/media/scans/sc_001_q1.jpg",
+      "reasoning_crop_url": "/api/media/scans/sc_001_q1_why.jpg"
     }
   ],
   "image_url": "/api/media/scans/sc_001.jpg",
   "duplicate_of": null
 }
 ```
-- `status`: `accepted` | `needs_review` | `duplicate` | `rejected`
-- `reject_reason`: `qr_not_found` | `page_not_found` | `too_blurry` | `too_dark` | `unknown_sheet` | null
-- `state` per answer: `single` | `blank` | `multiple` | `ambiguous`. Anything other than a confident `single` → `needs_review`.
-- `final` is filled by the teacher's review (or copied from `detected` when accepted).
-- Same `sheet_id` scanned again → `duplicate`, count unchanged. Replacing needs `?replace=true`.
+- **Every new scan is `needs_review`.** The teacher confirms the student and the answers (`PATCH /scans/{id}/review`) before anything counts. Scores and insights use only confirmed answers and the approved answer key.
+- `status`: `accepted` (teacher-confirmed) | `needs_review` | `duplicate` (the student already has a confirmed paper; not counted) | `rejected` (discarded by the teacher).
+- `roll_number.status`: `matched` | `unknown` (not on the class roster) | `ambiguous` (more than one possible student; `candidates` lists them) | `unreadable`. Never guessed. `7` may match `07` only if that is the only possibility (warning `roll_loose_match`).
+- `extracted_by`: `gemini` | `bubble_reader` (Gemini unavailable or its reply was invalid; the deterministic reader filled the answers) | `manual` (nothing readable; the teacher enters answers) | `qr_legacy` (scans made before roll numbers).
+- `state` per answer: `single` | `blank` | `multiple` | `ambiguous` | `unreadable`. Only `single` (→ its letter) and `blank` pre-fill `final`; the others leave `final: null` for the teacher. When Gemini and the bubble reader disagree, the answer becomes `ambiguous` with a `note`.
+- `confidence` is `null`: model self-reports are not treated as probabilities.
+- `warnings[].code`: `roll_unreadable`, `roll_unknown`, `roll_ambiguous`, `roll_loose_match`, `answers_unclear`, `ai_unavailable`, `ai_output_invalid`, `ai_off`, `ai_inconsistent`, `other_assessment`, `page_mismatch`, `class_mismatch`, `already_confirmed`, `too_dark`, `too_blurry`, `page_not_found`, `blurry`, `glare`, `cropped`, `incomplete_page`, `not_an_exam_page`, `crossed_out_marks`. Show `message`.
+- One **live** scan per student per assessment. A newer upload replaces an unconfirmed one; a confirmed one is only replaced with `replace` (query `?replace=true` on upload, or `"replace": true` on review). Enforced in the database too.
+- Upload errors (no scan stored): `415 not_an_image`, `413 too_large` (over 15 MB), `400 bad_image`, `409 not_printed`.
 
 Scan progress (`GET /assessments/{id}/scans`):
 ```json
-{ "total": 5, "accepted": 3, "needs_review": 1, "remaining": 1, "scans": ["<ScanResult>"] }
+{ "total": 5, "accepted": 3, "needs_review": 1, "remaining": 1, "scans": ["<ScanResult>"], "duplicates": [], "rejected": [] }
 ```
 
 ## 7. Review (`PATCH /scans/{scan_id}/review`)
 
 ```json
-{ "answers": [ { "question_id": "q_001", "final": "A" } ], "confirmed": true }
+{ "answers": [ { "question_id": "q_001", "final": "A" } ], "student_id": "st_01", "confirmed": true }
 ```
-`final` may be `"A"|"B"|"C"|"D"|"blank"`.
+`final` may be `"A"|"B"|"C"|"D"|"blank"`. Identity: `student_id` (must be in the assessment's class) **or** `roll_number` (matched against that class). `confirmed: true` needs a student and a `final` for every answer. `"replace": true` confirms a `duplicate` over the existing confirmed paper. `"discard": true` removes the photo from the queue.
 
 ## 8. InsightReport (`GET /assessments/{id}/insights`)
 
@@ -187,8 +195,8 @@ All paths below are served under the **`/api`** prefix (e.g. `POST /api/assessme
 | PATCH | `/questions/{id}` | partial `Question` (teacher edits) | `Question` |
 | POST | `/assessments/{id}/approve` | 400 if any question invalid | `Assessment` |
 | GET | `/assessments/{id}/print` | creates sheets if missing | `application/pdf` |
-| POST | `/assessments/{id}/scans` | multipart `image`, optional form field `short_code` if the QR won't read (+ `?replace=true`) | `ScanResult` |
-| GET | `/assessments/{id}/scans` | | progress object |
+| POST | `/assessments/{id}/scans` | multipart `image` (JPG/PNG, max 15 MB), optional form field `roll_number` typed by the teacher (+ `?replace=true`). Gemini reads the page; always returns `needs_review` (or `duplicate`) | `ScanResult` |
+| GET | `/assessments/{id}/scans` | | progress object (+ `duplicates`) |
 | PATCH | `/scans/{id}/review` | Review body | `ScanResult` |
 | POST | `/assessments/{id}/confirm` | locks results | `Assessment` |
 | GET | `/assessments/{id}/insights` | | `InsightReport` |
@@ -198,7 +206,7 @@ All paths below are served under the **`/api`** prefix (e.g. `POST /api/assessme
 | GET | `/classes` | teacher's classes | `[{id, name, grade}]` |
 | GET | `/assessments` | teacher's assessments, newest first | `[{id, title, topic, status, ...}]` |
 | GET | `/assessments/{id}` | | `Assessment` |
-| GET | `/assessments/{id}/results` | teacher-only per-student view | `[{student, short_code, scan_status, correct, total, answers}]` |
+| GET | `/assessments/{id}/results` | teacher-only per-student view | `[{student, roll_no, short_code, scan_status, correct, total, answers}]` |
 
 Errors are always `{ "error": "code", "message": "human text" }`.
 
@@ -207,7 +215,7 @@ Errors are always `{ "error": "code", "message": "human text" }`.
 **Extra fields the backend adds** (safe to ignore):
 - Assessment: `notes` (e.g. `"Using saved sample questions (AI unavailable)"`). Show it in the UI.
 - Question: `validation_errors` (list of strings; approve is blocked until all are empty) and `edited_by_teacher`.
-- Scan progress: `rejected` (last 5 rejected scans still worth showing as "rescan").
+- Scan progress: `duplicates` (papers waiting for a Replace decision) and `rejected` (teacher-discarded photos are left out). `remaining` = printed papers with no live scan yet.
 - Health: `ai_provider` = `app.ai` | `gemini` | `samples` (who answers AI calls right now).
 - InsightReport `teaching_action`: `source` = `ai` | `sample`. Questions keep `source` (`ai` | `teacher` | `sample`); show it.
 

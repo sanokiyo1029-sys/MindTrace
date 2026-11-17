@@ -40,7 +40,7 @@ def live(monkeypatch):
     monkeypatch.setattr(ai_bridge, "_cache", {})
     state = {"replies": [], "calls": []}
 
-    def fake_post(url, body):
+    def fake_post(url, body, timeout=None):
         state["calls"].append(body)
         r = state["replies"].pop(0) if len(state["replies"]) > 1 else state["replies"][0]
         if isinstance(r, Exception):

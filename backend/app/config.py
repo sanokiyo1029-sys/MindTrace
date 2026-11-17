@@ -17,6 +17,8 @@ AI_MODE = os.getenv("AI_MODE", "fixtures")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
 LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or "gemini-3.5-flash-lite"
 LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
+# Model that reads photographed papers (handwritten roll numbers, bubbles). Defaults to LLM_MODEL.
+LLM_VISION_MODEL = os.getenv("LLM_VISION_MODEL", "").strip() or LLM_MODEL
 # Google sign-in: OAuth client ID(s) from Google Cloud, comma-separated (web now, Android later).
 GOOGLE_CLIENT_IDS = [c.strip() for c in os.getenv("GOOGLE_CLIENT_ID", "").split(",") if c.strip()]
 # Google accounts (verified emails) allowed to sign in as the demo teacher, comma-separated.

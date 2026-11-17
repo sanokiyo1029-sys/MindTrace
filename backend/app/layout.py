@@ -11,6 +11,11 @@ def base() -> dict:
     return json.loads(_PATH.read_text())
 
 
+def paper_code(assessment_id: str) -> str:
+    """Short code printed on every copy so a scan can be checked against the selected assessment."""
+    return assessment_id.split("_", 1)[-1].upper()
+
+
 def question_blocks(n: int) -> list[dict]:
     """Per question: stem position, bubble centres (mm) and the reasoning box (mm)."""
     L = base()

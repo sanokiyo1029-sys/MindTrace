@@ -12,6 +12,7 @@ from app import demo_data
 from app.config import FIXTURES_DIR, MEDIA_DIR
 from app.db import Base, SessionLocal, engine, init_db
 from app.models import ClassRoom, Student, Teacher
+from app.rolls import from_student_code
 from app.security import hash_secret
 
 TEACHER_EMAIL = "teacher@mindtrace.demo"
@@ -49,7 +50,8 @@ def seed(reset: bool = False) -> dict:
             code = s["student_code"].upper()
             if not db.scalar(select(Student).where(Student.student_code == code)):
                 db.add(Student(id=s.get("id") or f"st_{i:02d}", class_id="cl_7a", display_name=s["display_name"],
-                               student_code=code, pin_hash=hash_secret(str(s["pin"]))))
+                               student_code=code, roll_no=str(s.get("roll_no") or from_student_code(code)),
+                               pin_hash=hash_secret(str(s["pin"]))))
         db.commit()
         return {"teacher": TEACHER_EMAIL, "password": TEACHER_PASSWORD,
                 "students": [(s["student_code"], str(s["pin"])) for s in roster()]}
