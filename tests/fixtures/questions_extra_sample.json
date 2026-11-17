@@ -1,0 +1,66 @@
+[
+  {
+    "topic": "fractions",
+    "concept": "adding fractions with equal denominators",
+    "stem": "What is 3/8 + 2/8?",
+    "options": {
+      "A": "5/16",
+      "B": "5/8",
+      "C": "6/64",
+      "D": "3/8"
+    },
+    "answer": "B",
+    "explanation": "Same denominator: 3 eighths + 2 eighths = 5 eighths.",
+    "distractors": {
+      "A": {
+        "misconception_id": "M_ADD_DENOMS",
+        "why": "Added top and bottom numbers"
+      },
+      "C": {
+        "misconception_id": "M_MULTIPLY_INSTEAD",
+        "why": "Multiplied the fractions"
+      },
+      "D": {
+        "misconception_id": "M_IGNORE_SECOND",
+        "why": "Ignored the second fraction"
+      }
+    },
+    "difficulty": "easy",
+    "source": "sample",
+    "id": "q_004",
+    "assessment_id": "as_001",
+    "status": "approved"
+  },
+  {
+    "topic": "fractions",
+    "concept": "adding fractions with unequal denominators (LCM)",
+    "stem": "What is 2/3 + 1/6?",
+    "options": {
+      "A": "3/9",
+      "B": "5/6",
+      "C": "3/6",
+      "D": "2/18"
+    },
+    "answer": "B",
+    "explanation": "2/3 = 4/6, so 4/6 + 1/6 = 5/6.",
+    "distractors": {
+      "A": {
+        "misconception_id": "M_NO_COMMON_DENOM",
+        "why": "Added tops and bottoms without a common denominator"
+      },
+      "C": {
+        "misconception_id": "M_LCM_ERROR",
+        "why": "Used 6 but did not scale 2/3 to 4/6"
+      },
+      "D": {
+        "misconception_id": "M_MULTIPLY_INSTEAD",
+        "why": "Multiplied the fractions"
+      }
+    },
+    "difficulty": "medium",
+    "source": "sample",
+    "id": "q_005",
+    "assessment_id": "as_001",
+    "status": "approved"
+  }
+]

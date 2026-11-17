@@ -1,0 +1,60 @@
+{
+  "scan_id": "sc_001",
+  "status": "needs_review",
+  "reject_reason": null,
+  "sheet_id": "s_8f3k2a9x",
+  "short_code": "MT-001",
+  "student": {
+    "id": "st_01",
+    "display_name": "Aarav"
+  },
+  "answers": [
+    {
+      "question_id": "q_001",
+      "detected": "A",
+      "state": "single",
+      "confidence": 0.96,
+      "fill": {
+        "A": 0.61,
+        "B": 0.05,
+        "C": 0.04,
+        "D": 0.03
+      },
+      "final": null,
+      "crop_url": "/api/media/scans/sc_001_q1.png",
+      "reasoning_crop_url": "/api/media/scans/sc_001_q1_why.png"
+    },
+    {
+      "question_id": "q_002",
+      "detected": "B",
+      "state": "single",
+      "confidence": 0.95,
+      "fill": {
+        "A": 0.03,
+        "B": 0.6,
+        "C": 0.04,
+        "D": 0.02
+      },
+      "final": null,
+      "crop_url": "/api/media/scans/sc_001_q2.png",
+      "reasoning_crop_url": "/api/media/scans/sc_001_q2_why.png"
+    },
+    {
+      "question_id": "q_003",
+      "detected": null,
+      "state": "multiple",
+      "confidence": 0.0,
+      "fill": {
+        "A": 0.59,
+        "B": 0.61,
+        "C": 0.03,
+        "D": 0.02
+      },
+      "final": null,
+      "crop_url": "/api/media/scans/sc_001_q3.png",
+      "reasoning_crop_url": "/api/media/scans/sc_001_q3_why.png"
+    }
+  ],
+  "image_url": "/api/media/scans/sc_001.jpg",
+  "duplicate_of": null
+}

@@ -1,0 +1,137 @@
+[
+  {
+    "id": "M_ADD_DENOMS",
+    "topic": "fractions",
+    "label": "Adds the denominators as well as the numerators",
+    "student_friendly": "You may have added the bottom numbers too. The bottom number tells the size of each piece, and that stays the same when the pieces are the same size.",
+    "teaching_activity": {
+      "title": "Fraction strips: same-size pieces",
+      "minutes": 5,
+      "steps": [
+        "Show 1/3 + 1/3 with two paper strips cut into thirds.",
+        "Ask: did the pieces get smaller when we joined them?",
+        "Write 2/3 and compare it with 2/6 on a strip cut into sixths."
+      ]
+    }
+  },
+  {
+    "id": "M_MULTIPLY_INSTEAD",
+    "topic": "fractions",
+    "label": "Multiplies the fractions instead of adding them",
+    "student_friendly": "You may have multiplied instead of added. Adding joins the pieces together, so the answer should be bigger than each part.",
+    "teaching_activity": {
+      "title": "Add means join: number-line hops",
+      "minutes": 5,
+      "steps": [
+        "Draw a 0 to 1 number line split into equal parts.",
+        "Hop the first fraction, then hop the second from where you landed.",
+        "Ask: is the answer bigger or smaller than where we started?"
+      ]
+    }
+  },
+  {
+    "id": "M_IGNORE_SECOND",
+    "topic": "fractions",
+    "label": "Ignores the second fraction",
+    "student_friendly": "You may have only counted the first fraction. Shade both parts on one bar and count all the shaded pieces.",
+    "teaching_activity": {
+      "title": "Shade both on one bar",
+      "minutes": 5,
+      "steps": [
+        "Draw one bar split into equal parts.",
+        "Shade the first fraction in one colour and the second in another.",
+        "Count every shaded piece together."
+      ]
+    }
+  },
+  {
+    "id": "M_NO_COMMON_DENOM",
+    "topic": "fractions",
+    "label": "Adds unlike fractions without making a common denominator",
+    "student_friendly": "You may have added tops and bottoms straight away. Halves and thirds are different-sized pieces, so first change them into same-sized pieces.",
+    "teaching_activity": {
+      "title": "Fold into same-size pieces",
+      "minutes": 5,
+      "steps": [
+        "Fold one paper into halves and another into thirds.",
+        "Refold both into sixths and count the pieces again.",
+        "Add the sixths: 3/6 + 2/6 = 5/6."
+      ]
+    }
+  },
+  {
+    "id": "M_LCM_ERROR",
+    "topic": "fractions",
+    "label": "Finds a common denominator but does not scale the numerators",
+    "student_friendly": "You may have changed the bottom number only. Multiply the top and bottom by the same number to keep the fraction's size.",
+    "teaching_activity": {
+      "title": "Equivalent fraction wall",
+      "minutes": 5,
+      "steps": [
+        "Show a fraction wall with halves, thirds and sixths.",
+        "Point out that 1/2 lines up with 3/6, not 1/6.",
+        "Practise: multiply top and bottom by the same number."
+      ]
+    }
+  },
+  {
+    "id": "M_WHOLE_NUMBER_BIAS",
+    "topic": "fractions",
+    "label": "Thinks a fraction with bigger numbers is bigger",
+    "student_friendly": "You may have picked the fraction with bigger numbers. A fraction is a size, so compare how much of the whole each one covers.",
+    "teaching_activity": {
+      "title": "Place them on a number line",
+      "minutes": 5,
+      "steps": [
+        "Draw 0 to 1 and mark 1/2.",
+        "Place each fraction and compare its distance from 1.",
+        "Ask: which covers more of the whole?"
+      ]
+    }
+  },
+  {
+    "id": "M_GAP_THINKING",
+    "topic": "fractions",
+    "label": "Compares fractions by the gap between top and bottom",
+    "student_friendly": "You may have looked at how far the top is from the bottom. 1/2 and 9/10 both miss one piece, but the pieces are very different sizes.",
+    "teaching_activity": {
+      "title": "Same gap, different size",
+      "minutes": 5,
+      "steps": [
+        "Show 1/2 and 9/10 as bars: both are missing one piece.",
+        "Ask: is the missing piece the same size?",
+        "Compare using a common denominator."
+      ]
+    }
+  },
+  {
+    "id": "M_CANT_COMPARE_UNLIKE",
+    "topic": "fractions",
+    "label": "Believes fractions with different denominators can't be compared",
+    "student_friendly": "You may have stopped because the bottom numbers differ. Try rewriting both with the same bottom number.",
+    "teaching_activity": {
+      "title": "Benchmark against 1/2",
+      "minutes": 5,
+      "steps": [
+        "Ask: is each fraction more or less than one half?",
+        "If both are on the same side, use a common denominator.",
+        "Check with a drawing."
+      ]
+    }
+  },
+  {
+    "id": "M_SMALLER_DENOM_BIGGER",
+    "topic": "fractions",
+    "label": "Compares only denominators: thinks a smaller denominator always means a bigger fraction",
+    "student_friendly": "You may have compared only the bottom numbers. Use a common denominator so you can compare the number of equal-sized pieces.",
+    "teaching_activity": {
+      "title": "Size of piece AND number of pieces",
+      "minutes": 5,
+      "steps": [
+        "Show 3/5 and 5/7 as bars.",
+        "Fifths are bigger pieces, but 5/7 has more of them.",
+        "Compare with a common denominator: 21/35 vs 25/35."
+      ]
+    }
+  }
+]

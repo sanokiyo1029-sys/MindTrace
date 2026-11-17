@@ -1,0 +1,130 @@
+[
+  {
+    "topic": "fractions",
+    "concept": "adding fractions with equal denominators",
+    "stem": "What is 2/5 + 1/5?",
+    "options": {
+      "A": "3/10",
+      "B": "3/5",
+      "C": "2/25",
+      "D": "2/5"
+    },
+    "answer": "B",
+    "explanation": "Same-size pieces: 2 fifths + 1 fifth = 3 fifths.",
+    "distractors": {
+      "A": {
+        "misconception_id": "M_ADD_DENOMS",
+        "why": "Added top and bottom numbers"
+      },
+      "C": {
+        "misconception_id": "M_MULTIPLY_INSTEAD",
+        "why": "Multiplied the fractions"
+      },
+      "D": {
+        "misconception_id": "M_IGNORE_SECOND",
+        "why": "Ignored the second fraction"
+      }
+    },
+    "difficulty": "easy",
+    "source": "sample",
+    "id": "q_006",
+    "assessment_id": "as_002",
+    "status": "draft"
+  },
+  {
+    "topic": "fractions",
+    "concept": "adding fractions with unequal denominators (LCM)",
+    "stem": "What is 1/4 + 1/2?",
+    "options": {
+      "A": "2/6",
+      "B": "3/4",
+      "C": "2/4",
+      "D": "1/8"
+    },
+    "answer": "B",
+    "explanation": "1/2 = 2/4, so 1/4 + 2/4 = 3/4.",
+    "distractors": {
+      "A": {
+        "misconception_id": "M_NO_COMMON_DENOM",
+        "why": "Added tops and bottoms"
+      },
+      "C": {
+        "misconception_id": "M_LCM_ERROR",
+        "why": "Used 4 but did not scale 1/2 to 2/4"
+      },
+      "D": {
+        "misconception_id": "M_MULTIPLY_INSTEAD",
+        "why": "Multiplied the fractions"
+      }
+    },
+    "difficulty": "medium",
+    "source": "sample",
+    "id": "q_007",
+    "assessment_id": "as_002",
+    "status": "draft"
+  },
+  {
+    "topic": "fractions",
+    "concept": "comparing fractions",
+    "stem": "Which is greater: 2/7 or 3/8?",
+    "options": {
+      "A": "2/7",
+      "B": "3/8",
+      "C": "They are equal",
+      "D": "Can't compare: different denominators"
+    },
+    "answer": "B",
+    "explanation": "Use fifty-sixths: 2/7 = 16/56 and 3/8 = 21/56, so 3/8 is greater.",
+    "distractors": {
+      "A": {
+        "misconception_id": "M_SMALLER_DENOM_BIGGER",
+        "why": "Picked the smaller denominator without comparing the numerators"
+      },
+      "C": {
+        "misconception_id": "M_GAP_THINKING",
+        "why": "Both fractions are five pieces short of a whole, so assumed they are equal"
+      },
+      "D": {
+        "misconception_id": "M_CANT_COMPARE_UNLIKE",
+        "why": "Thought unlike fractions could not be compared"
+      }
+    },
+    "difficulty": "medium",
+    "source": "sample",
+    "id": "q_008",
+    "assessment_id": "as_002",
+    "status": "draft"
+  },
+  {
+    "topic": "fractions",
+    "concept": "comparing fractions",
+    "stem": "Which is greater: 2/3 or 3/5?",
+    "options": {
+      "A": "3/5",
+      "B": "2/3",
+      "C": "They are equal",
+      "D": "Can't compare: different denominators"
+    },
+    "answer": "B",
+    "explanation": "Use fifteenths: 2/3 = 10/15 and 3/5 = 9/15, so 2/3 is greater.",
+    "distractors": {
+      "A": {
+        "misconception_id": "M_WHOLE_NUMBER_BIAS",
+        "why": "Picked the fraction with bigger numbers"
+      },
+      "C": {
+        "misconception_id": "M_WHOLE_NUMBER_BIAS",
+        "why": "Rounded both fractions to 1 before comparing"
+      },
+      "D": {
+        "misconception_id": "M_CANT_COMPARE_UNLIKE",
+        "why": "Thought unlike fractions can't be compared"
+      }
+    },
+    "difficulty": "medium",
+    "source": "sample",
+    "id": "q_009",
+    "assessment_id": "as_002",
+    "status": "draft"
+  }
+]
