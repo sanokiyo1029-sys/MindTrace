@@ -184,16 +184,27 @@ All paths below are served under the **`/api`** prefix (e.g. `POST /api/assessme
 | PATCH | `/questions/{id}` | partial `Question` (teacher edits) | `Question` |
 | POST | `/assessments/{id}/approve` | 400 if any question invalid | `Assessment` |
 | GET | `/assessments/{id}/print` | creates sheets if missing | `application/pdf` |
-| POST | `/assessments/{id}/scans` | multipart `image` (+ `?replace=true`) | `ScanResult` |
+| POST | `/assessments/{id}/scans` | multipart `image`, optional form field `short_code` if the QR won't read (+ `?replace=true`) | `ScanResult` |
 | GET | `/assessments/{id}/scans` | | progress object |
 | PATCH | `/scans/{id}/review` | Review body | `ScanResult` |
 | POST | `/assessments/{id}/confirm` | locks results | `Assessment` |
 | GET | `/assessments/{id}/insights` | | `InsightReport` |
 | POST | `/assessments/{id}/followup` | `{misconception_ids: []}` | new draft `Assessment` |
 | GET | `/student/me/results` | student token | Student report |
-| GET | `/health` | | `{ok, ai_mode}` |
+| GET | `/health` | | `{ok, ai_mode, ai_module_loaded}` |
+| GET | `/classes` | teacher's classes | `[{id, name, grade}]` |
+| GET | `/assessments` | teacher's assessments, newest first | `[{id, title, topic, status, ...}]` |
+| GET | `/assessments/{id}` | | `Assessment` |
+| GET | `/assessments/{id}/results` | teacher-only per-student view | `[{student, short_code, scan_status, correct, total, answers}]` |
 
 Errors are always `{ "error": "code", "message": "human text" }`.
+
+**Auth:** send `Authorization: Bearer <token>`. For links the browser opens directly (the print PDF), `?token=<token>` also works.
+
+**Extra fields the backend adds** (safe to ignore):
+- Assessment: `notes` (e.g. `"Using saved sample questions (AI unavailable)"`). Show it in the UI.
+- Question: `validation_errors` (list of strings; approve is blocked until all are empty) and `edited_by_teacher`.
+- Scan progress: `rejected` (last 5 rejected scans still worth showing as "rescan").
 
 ## AI module interface (research owns `backend/app/ai/`)
 

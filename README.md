@@ -57,13 +57,14 @@ demo/        runbook, test pack ground truth, scan log, backup video link
 
 ## Run it locally
 
-_Filled in by the backend and frontend owners once it runs._
-
 ```bash
-# backend
-cd backend && python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt && cp ../.env.example ../.env
-uvicorn app.main:app --reload
+cp .env.example .env
+
+# backend (http://localhost:8000/docs)
+cd backend && python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# demo login: teacher@mindtrace.demo / demo1234
 
 # frontend
 cd frontend && npm install && npm run dev

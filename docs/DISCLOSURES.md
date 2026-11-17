@@ -8,7 +8,7 @@ Keep this honest and up to date; judges may ask.
 
 | Area | Tools used | Notes |
 |---|---|---|
-| Backend | | |
+| Backend | Claude (Claude Code session, directed by Rohan) | First version of API, PDF sheets, scanner, insights and tests written with Claude at the event; reviewed and tested by Rohan |
 | Frontend | | |
 | AI module / prompts | | |
 | Pitch / demo | | |
