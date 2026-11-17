@@ -80,7 +80,7 @@ export const api = {
   editQuestion: (id, body) => request(`/questions/${id}`, json('PATCH', body)),
   approve: (id) => request(`/assessments/${id}/approve`, { method: 'POST' }),
   scans: (id) => request(`/assessments/${id}/scans`),
-  uploadScan: (id, file) => { const form = new FormData(); form.append('image', file); return request(`/assessments/${id}/scans`, { method: 'POST', body: form }); },
+  uploadScan: (id, file, rollNumber) => { const form = new FormData(); form.append('image', file); if (rollNumber?.trim()) form.append('roll_number', rollNumber.trim()); return request(`/assessments/${id}/scans`, { method: 'POST', body: form }); },
   reviewScan: (id, body) => request(`/scans/${id}/review`, json('PATCH', body)),
   confirm: (id) => request(`/assessments/${id}/confirm`, { method: 'POST' }),
   insights: (id) => request(`/assessments/${id}/insights`),

@@ -206,3 +206,27 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .google-slot{display:flex;justify-content:center;min-height:44px}
 .google-note{color:var(--muted);font-size:13px;margin:14px 0 0}
 @media(prefers-reduced-motion:reduce){.busy-bar::before{animation:none;width:100%;opacity:.7}.page-enter{animation:none}.wedges{display:none}}
+
+/* ===== Roll-number papers and Gemini scan review ===== */
+.paper-top{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:end;margin-bottom:14px}
+.paper-top small{display:block;font:700 9px var(--mono);letter-spacing:.8px;color:var(--ink);margin-bottom:3px}
+.roll-boxes{display:flex}.roll-boxes i{width:22px;height:26px;border:1.5px solid var(--ink);margin-left:-1.5px}.roll-boxes i:first-child{margin-left:0}
+.class-box{display:block;height:26px;border:1.5px solid var(--ink)}
+.paper-page b{font:700 11px var(--body)}.paper-page code{font:700 11px var(--mono)}
+.roster-roll{min-width:30px;font:700 13px var(--mono);color:var(--red)}
+.roll-input{margin:14px 0 0;max-width:320px}.roll-input small{text-transform:none;letter-spacing:0;font-family:var(--body)}
+.upload-button.is-disabled{opacity:.55;pointer-events:none}
+.scan-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.scan-list li{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}
+.scan-list .status-pill{font-size:10px;padding:4px 7px}
+.scan-warnings{margin:12px 0 0;padding:10px 12px 10px 28px;background:#fff4c2;border:1.5px solid #7a4b00;border-radius:2px;color:#5c3900;display:grid;gap:4px;font-size:14px}
+.scan-review-body{display:grid;grid-template-columns:minmax(160px,240px) minmax(0,1fr);gap:16px;margin-top:14px;align-items:start}
+.scan-photo{display:grid;gap:4px;color:var(--blue);font-size:12px;text-align:center}
+.scan-photo img{width:100%;border:1.5px solid #231d1840;border-radius:2px;background:#fff}
+.scan-review-fields .field{margin-bottom:10px}
+.scan-answer-row:not(:has(.scan-crop)){grid-template-columns:1fr}
+.scan-answer-row.flagged{border-color:#7a4b00;background:#fff9de}
+.scan-review-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+.scan-review-actions .disabled-hint{margin:0}
+.bulk-banner{align-items:center}.bulk-banner p{flex:1}
+@media(max-width:700px){.scan-review-body{grid-template-columns:1fr}.scan-photo{max-width:260px}.paper-top{grid-template-columns:auto 1fr}.paper-page{grid-column:1/-1}}
