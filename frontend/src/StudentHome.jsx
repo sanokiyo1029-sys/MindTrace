@@ -1,66 +1,112 @@
+// The signed-in student's own dashboard: latest and past assessments, their own released scanned paper,
+// teacher-approved feedback (a concept to revisit), assigned practice and progress by topic. All from their records.
+import { useEffect, useState } from 'react';
+import { api, mediaUrl, store } from './api.js';
 import Icon from './Icon.jsx';
 import PaperSurface from './PaperSurface.jsx';
+import { VideoLink } from './TeacherAreas.jsx';
 
-export default function StudentHome({ results }) {
-  const assessments = results.assessments || [];
-  const answers = assessments.flatMap(assessment => assessment.answers.map(answer => ({
-    ...answer, key: `${assessment.assessment_id}-${answer.question_id}`,
-  })));
-  const improvements = answers.filter(answer => answer.maybe);
-  const practice = answers.filter(answer => answer.correct && answer.chosen !== answer.correct && answer.explanation);
-  const feedback = answers.filter(answer => answer.explanation);
+const pct = (s) => s?.total ? Math.round(s.correct / s.total * 100) : null;
+
+export default function StudentHome({ token, onExpired }) {
+  const [results, setResults] = useState(null);
+  const [practice, setPractice] = useState([]);
+  const [error, setError] = useState('');
+  async function load() {
+    setError('');
+    try {
+      const [r, p] = await Promise.all([api.studentResults(token), api.studentPractice(token)]);
+      setResults(r); setPractice(p);
+    } catch (e) { if (e.status === 401) onExpired(); else setError(e.message); }
+  }
+  useEffect(() => { load(); }, [token]);
+
+  if (error) return <section className="panel student-result-card" role="alert"><p>{error}</p><button className="button outline" onClick={load}>Try again</button></section>;
+  if (!results) return <p className="list-empty" role="status">Loading your work…</p>;
+  const all = results.assessments || [];
+  const released = all.filter(a => a.status !== 'awaiting_review');
+  const waiting = all.filter(a => a.status === 'awaiting_review');
+  const latest = released[0];
+  const feedback = released.flatMap(a => (a.feedback || []).map(f => ({ ...f, title: a.title, key: `${a.assessment_id}-${f.question_id}` })));
+  const byTopic = {};
+  for (const a of [...released].reverse()) if (a.score?.total) (byTopic[a.topic] ||= []).push({ title: a.title, pct: pct(a.score) });
 
   return <>
     <header className="student-home-heading">
-      <p className="landing-kicker">Welcome, {results.student.display_name}</p>
-      <h1><span className="marker-text">Your Learning Journey</span></h1>
-      <p>Every mistake is a chance to understand something new.</p>
+      <p className="landing-kicker">Your learning journey</p>
+      <h1><span className="marker-text">Hello, {results.student.display_name}!</span></h1>
+      <p>Every answer tells you something new. Here is what your teacher has shared with you.</p>
     </header>
-    <nav className="student-section-links" aria-label="Your results">
-      <a href="#my-results">My Results</a>
-      {feedback.length > 0 && <a href="#feedback">Assessment Feedback</a>}
-      {improvements.length > 0 && <a href="#improve">What I Can Improve</a>}
-      {practice.length > 0 && <a href="#practice">Suggested Practice</a>}
+    <nav className="student-section-links" aria-label="Your dashboard">
+      <a href="#latest">Latest assessment</a><a href="#revisit">Concept to revisit</a><a href="#practice">Practice</a><a href="#progress">Progress</a><a href="#past">Past assessments</a>
     </nav>
     <div className="student-home-grid">
-      <div id="my-results" className="student-home-results">
-        <h2>My Results</h2>
-        {assessments.length === 0 && <section className="panel student-result-card">
-          <p>Your results will appear here after your teacher shares them.</p>
-        </section>}
-        {assessments.map(assessment => <PaperSurface key={assessment.assessment_id} className="panel student-result-card">
-          <h3><span className="hover-marker">{assessment.title}</span></h3>
-          {assessment.answers.map(answer => <div className="student-answer" key={answer.question_id}>
-            <b>{answer.stem}</b>
-            <p>Your answer <strong>{answer.chosen || 'Blank'}</strong>
-              {answer.correct && <span>Correct answer {answer.correct}</span>}
-            </p>
-          </div>)}
-        </PaperSurface>)}
+      <div className="student-home-results">
+        <h2 id="latest">Latest assessment{latest ? `: ${latest.title}` : ''}</h2>
+        {latest ? <AssessmentCard a={latest} token={token} open /> : <section className="panel student-result-card"><p>{waiting.length ? 'Your teacher is still checking your latest paper. Your results will appear here once they’re confirmed.' : 'Your results will appear here after your teacher shares them.'}</p></section>}
+        {waiting.length > 0 && latest && <p className="awaiting-note"><Icon name="clock" size={15} /> {waiting.map(w => w.title).join(', ')}: awaiting teacher review.</p>}
+        <h2 id="past">Past assessments</h2>
+        {released.length > 1 ? released.slice(1).map(a => <AssessmentCard key={a.assessment_id} a={a} token={token} />) : <section className="panel student-result-card"><p>Older assessments will be listed here.</p></section>}
       </div>
       <div className="student-home-help">
-        {feedback.length > 0 && <div id="feedback">
-          <h2>Assessment Feedback</h2>
-          <PaperSurface className="panel student-result-card">
-            {feedback.map(answer => <div className="student-answer" key={answer.key}><b>{answer.stem}</b><p>{answer.explanation}</p></div>)}
-          </PaperSurface>
-        </div>}
-        {improvements.length > 0 && <div id="improve">
-          <h2>What I Can Improve</h2>
-          <PaperSurface className="panel student-result-card">
-            {improvements.map(answer => <div className="student-answer" key={answer.key}><b>{answer.stem}</b><p>{answer.maybe}</p></div>)}
-          </PaperSurface>
-        </div>}
-        {practice.length > 0 && <div id="practice">
-          <h2>Suggested Practice</h2>
-          <PaperSurface className="panel student-result-card">
-            <p><Icon name="book" size={17} /> Try these questions again before checking the explanations.</p>
-            {practice.map(answer => <details className="student-practice" key={answer.key}>
-              <summary>{answer.stem}</summary><p>{answer.explanation}</p>
-            </details>)}
-          </PaperSurface>
-        </div>}
+        <h2 id="revisit">Concept to revisit</h2>
+        {feedback.length ? <PaperSurface className="panel student-result-card">{feedback.map(f => <div className="student-answer revisit" key={f.key}>
+          <b>{f.concept || 'From your teacher'}</b><small>{f.title}</small><p>{f.text}</p><VideoLink url={f.video_url} title={f.concept} /></div>)}</PaperSurface>
+          : <section className="panel student-result-card"><p>When your teacher reviews your answers, their notes about what to try next will show up here.</p></section>}
+        <h2 id="practice">Practice from your teacher</h2>
+        {practice.length ? practice.map(p => <PracticeCard key={p.assignment_id} item={p} token={token} onDone={x => setPractice(list => list.map(y => y.assignment_id === x.assignment_id ? x : y))} onExpired={onExpired} />)
+          : <section className="panel student-result-card"><p>No practice assigned right now.</p></section>}
+        <h2 id="progress">Progress by topic</h2>
+        <section className="panel student-result-card">{Object.keys(byTopic).length && released.length >= 2 ? <ul className="topic-progress">{Object.entries(byTopic).map(([topic, runs]) => <li key={topic}>
+          <b>{topic}</b>{runs.map((r, i) => <span key={i} title={r.title}><i style={{ width: `${r.pct}%` }} />{r.pct}%</span>)}</li>)}</ul>
+          : <p>Once you have done two or more checked assessments, you’ll see how each topic is going here. One quiz is just a snapshot, not a label.</p>}</section>
       </div>
     </div>
   </>;
+}
+
+function AssessmentCard({ a, token, open = false }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  return <PaperSurface className="panel student-result-card">
+    <h3><span className="hover-marker">{a.title}</span></h3>
+    <p className="student-score">{a.score?.total ? <><b>{a.score.correct} of {a.score.total}</b> multiple-choice answers correct</> : 'Checked by your teacher'} · {a.topic}</p>
+    <details open={open}><summary>Your answers</summary>
+      {a.answers.map(answer => <div className="student-answer" key={answer.question_id}>
+        <b>{answer.stem}</b>
+        {answer.type === 'descriptive' ? <p>You wrote: “{answer.text || '…'}”</p>
+          : <p>Your answer <strong>{answer.chosen === 'blank' || !answer.chosen ? 'Blank' : `${answer.chosen}. ${answer.options?.[answer.chosen] || ''}`}</strong>
+            {answer.correct && answer.chosen !== answer.correct && <span>Correct answer {answer.correct}. {answer.options?.[answer.correct]}</span>}</p>}
+        {answer.chosen !== answer.correct && answer.type !== 'descriptive' && answer.explanation && <small>{answer.explanation}</small>}
+      </div>)}
+    </details>
+    {a.scan_url && <details><summary>Your scanned paper</summary>{imgFailed ? <p>The photo couldn’t load. Check your connection.</p>
+      : <img className="student-scan" src={mediaUrl(a.scan_url, token)} alt={`Your scanned paper for ${a.title}`} loading="lazy" onError={() => setImgFailed(true)} />}</details>}
+  </PaperSurface>;
+}
+
+function PracticeCard({ item, token, onDone, onExpired }) {
+  const key = `mt_practice:${item.assignment_id}`; // unsent answers survive a reload or a dropped connection
+  const [answers, setAnswers] = useState(() => { try { return JSON.parse(store.get(key) || '{}'); } catch { return {}; } });
+  const [state, setState] = useState(''); const [error, setError] = useState('');
+  useEffect(() => { store.set(key, Object.keys(answers).length && item.status !== 'submitted' ? JSON.stringify(answers) : ''); }, [answers]);
+  async function submit() {
+    setState('sending'); setError('');
+    try {
+      const r = await api.submitPractice(token, item.assignment_id, { answers: item.questions.map(q => ({ question_id: q.id, ...(q.type === 'descriptive' ? { text: answers[q.id] || '' } : { choice: answers[q.id] || null }) })) });
+      store.set(key, ''); onDone(r);
+    } catch (e) { if (e.status === 401) onExpired(); else setError(e.offline ? 'You’re offline. Your answers are kept on this device; submit again when you’re back online.' : e.message); }
+    finally { setState(''); }
+  }
+  if (item.status === 'submitted') return <PaperSurface className="panel student-result-card"><h3>{item.title}</h3><p className="student-score"><Icon name="check" size={15} /> Submitted</p>
+    {item.result.map((r, i) => { const q = item.questions[i]; return <div className="student-answer" key={r.question_id}><b>{q.stem}</b>
+      {q.type === 'descriptive' ? <p>You wrote: “{r.text || '…'}”</p> : <p>Your answer <strong>{r.chosen || 'Blank'}</strong>{r.correct && r.chosen !== r.correct && <span>Correct answer {r.correct}</span>}</p>}
+      {r.chosen !== r.correct && r.explanation && <small>{r.explanation}</small>}</div>; })}</PaperSurface>;
+  const ready = item.questions.every(q => answers[q.id]);
+  return <PaperSurface className="panel student-result-card"><h3>{item.title}</h3><p className="student-score">Not started · {item.questions.length} question{item.questions.length === 1 ? '' : 's'}</p>
+    {item.questions.map((q, i) => <fieldset className="practice-question" key={q.id}><legend>{i + 1}. {q.stem}</legend>
+      {q.type === 'descriptive' ? <textarea rows="3" value={answers[q.id] || ''} onChange={e => setAnswers({ ...answers, [q.id]: e.target.value })} aria-label={`Your answer to question ${i + 1}`} />
+        : Object.entries(q.options || {}).map(([k, v]) => <label key={k} className="practice-option"><input type="radio" name={q.id} checked={answers[q.id] === k} onChange={() => setAnswers({ ...answers, [q.id]: k })} /> {k}. {v}</label>)}</fieldset>)}
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <button className="button primary" disabled={!ready || state === 'sending'} onClick={submit}>{state === 'sending' ? 'Submitting…' : 'Submit once'}</button>
+  </PaperSurface>;
 }

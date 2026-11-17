@@ -16,8 +16,8 @@ def questions_of(db: Session, assessment_id: str) -> list[Question]:
 def assessment(db: Session, a: Assessment) -> dict:
     return {
         "id": a.id, "class_id": a.class_id, "title": a.title, "topic": a.topic,
-        "concepts_text": a.concepts_text, "status": a.status,
-        "parent_assessment_id": a.parent_assessment_id, "notes": a.notes or [],
+        "concepts_text": a.concepts_text, "status": a.status, "subject": a.subject or "mathematics",
+        "parent_assessment_id": a.parent_assessment_id, "notes": a.notes or [], "plan": a.plan or {},
         "questions": [question(q) for q in questions_of(db, a.id)],
     }
 
@@ -40,4 +40,5 @@ def scan(db: Session, sc: Scan) -> dict:
         "extracted_by": sc.extracted_by,
         "warnings": sc.warnings or [],
         "answers": sc.answers or [], "image_url": sc.image_url, "duplicate_of": sc.duplicate_of,
+        "version": sc.version or 1,
     }

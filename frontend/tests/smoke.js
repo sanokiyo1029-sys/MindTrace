@@ -31,8 +31,9 @@ async (page) => {
   await page.getByLabel('Student code').fill('7A-01');
   await page.getByLabel('PIN', { exact: true }).fill('1111');
   await button('Sign In').click();
-  await heading('Your Learning Journey').waitFor();
-  await heading('My Results').waitFor();
+  await heading('Hello, Aarav!').waitFor();
+  await page.getByRole('heading', { name: /^Latest assessment/ }).waitFor();
+  await heading('Concept to revisit').waitFor();
   if (await page.getByRole('navigation', { name: 'Main navigation' }).count()) {
     throw new Error('Teacher navigation appeared in the student home.');
   }

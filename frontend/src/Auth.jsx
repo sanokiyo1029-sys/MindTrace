@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from './api.js';
 import Icon from './Icon.jsx';
 
-export default function Auth({ onSession, onSample, googleSignIn, serverField }) {
+export default function Auth({ onSession, onSample, googleSignIn, serverField, note }) {
   const [params, setParams] = useSearchParams();
   const role = params.get('role') === 'student' ? 'student' : 'teacher';
 
@@ -13,6 +13,7 @@ export default function Auth({ onSession, onSample, googleSignIn, serverField })
         <span className="student-lock"><Icon name="shield" size={25} /></span>
         <h1>Welcome to MindTrace!</h1>
         <p>Choose how you’d like to continue.</p>
+        {note && <p className="auth-note" role="status">{note}</p>}
         <div className="role-select" role="group" aria-label="Choose your role">
           <button type="button" aria-pressed={role === 'teacher'}
             onClick={() => setParams({ role: 'teacher' })}><Icon name="book" /> Teacher</button>
@@ -53,13 +54,12 @@ function AuthForm({ role, onSession, serverField }) {
     }
     setLoading(true);
     try {
-      const { token } = teacher
+      const reply = teacher
         ? await api.login({ email: identity, password: secret })
         : await api.studentLogin({ student_code: identity, pin: secret });
+      const { token } = reply;
       if (typeof token !== 'string' || !token.trim()) throw new Error('The server did not return a sign-in session.');
-      const session = teacher
-        ? { role, token }
-        : { role, token, results: await api.studentResults(token) };
+      const session = { role, token, teacher: reply.teacher, student: reply.student };
       if (!active.current) return;
       onSession(session);
     } catch (err) {

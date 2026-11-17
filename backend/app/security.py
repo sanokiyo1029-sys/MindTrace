@@ -1,11 +1,13 @@
 import hashlib
 import hmac
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app import config
 from app.db import get_db
 from app.models import AuthToken, Student, Teacher
 
@@ -38,13 +40,31 @@ def _token_from(creds: HTTPAuthorizationCredentials | None, token_q: str | None)
     return token_q  # ?token= lets <a href> / <img> open the PDF and scan images
 
 
-def _lookup(db: Session, tok: str | None, role: str):
+def token_row(db: Session, tok: str | None) -> AuthToken:
+    """The live session for a token (any role), or 401. Expired sessions are removed."""
     if not tok:
         raise HTTPException(401, detail={"error": "unauthorized", "message": "Please log in."})
     row = db.get(AuthToken, tok)
-    if not row or row.role != role:
+    if not row:
+        raise HTTPException(401, detail={"error": "unauthorized", "message": "Please log in again."})
+    made = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - made > timedelta(hours=config.SESSION_HOURS):
+        db.delete(row)
+        db.commit()
+        raise HTTPException(401, detail={"error": "session_expired", "message": "Your session expired. Please sign in again."})
+    return row
+
+
+def _lookup(db: Session, tok: str | None, role: str):
+    row = token_row(db, tok)
+    if row.role != role:
         raise HTTPException(401, detail={"error": "unauthorized", "message": "Please log in again."})
     return row.subject_id
+
+
+def current_session(creds: HTTPAuthorizationCredentials | None = Depends(bearer), token: str | None = Query(default=None),
+                    db: Session = Depends(get_db)) -> AuthToken:
+    return token_row(db, _token_from(creds, token))
 
 
 def current_teacher(creds: HTTPAuthorizationCredentials | None = Depends(bearer), token: str | None = Query(default=None),

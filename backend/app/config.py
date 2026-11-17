@@ -26,6 +26,9 @@ GOOGLE_TEACHER_EMAILS = {e.strip().lower() for e in os.getenv("GOOGLE_TEACHER_EM
 # Built website, served by the backend at / so one address (or one tunnel) is the whole app.
 FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", REPO_ROOT / "frontend" / "dist"))
 
+# Sign-in sessions end after this many hours (teacher and student); the app then asks to sign in again.
+SESSION_HOURS = float(os.getenv("SESSION_HOURS", "168"))
+
 # OMR thresholds: tune these on real printed sheets (see demo/scan_log.md)
 OMR_FILLED = float(os.getenv("OMR_FILLED", "0.42"))   # fraction of dark pixels to count as a mark
 OMR_EMPTY = float(os.getenv("OMR_EMPTY", "0.18"))     # below this a bubble is clearly empty

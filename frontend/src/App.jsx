@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { api, demo, getServer, getTeacherToken, isMock as fixtureMode, isNative, mediaUrl, onBusy, printUrl, setOnAuthLost, setServer, setTeacherToken, store } from './api.js';
+import { api, demo, getServer, getStudentToken, printUrl, getTeacherId, getTeacherToken, isMock as fixtureMode, isNative, mediaUrl, onBusy, setOnAuthLost, setServer, setStudentToken, setTeacherId, setTeacherToken, store } from './api.js';
+import { drop, entry, flush, keepMine, outbox, queue, retryBlocked, subscribe, summary } from './offline.js';
+import { Button, PageHeading, Panel } from './ui.jsx';
+import { ClassOverview, FeedbackPage, HistoryPage, PracticePanel, RecommendationsPage, StudentReportPage, SUBJECTS, subjectName, SyncBadge } from './TeacherAreas.jsx';
 import Auth from './Auth.jsx';
 import Landing, { SiteHeader, Wordmark } from './Landing.jsx';
 import StudentHome from './StudentHome.jsx';
 import PaperSurface from './PaperSurface.jsx';
 import Icon from './Icon.jsx';
 
+// The teacher's six areas. Question review, printing, scan review, feedback and student reports open from inside them.
 const nav = [
-  { to: '/workspace', label: 'Overview', icon: 'grid' }, { to: '/assessment', label: 'New assessment', icon: 'plus' },
-  { to: '/review', label: 'Question review', icon: 'book' }, { to: '/print', label: 'Print sheets', icon: 'printer' },
+  { to: '/workspace', label: 'Overview', icon: 'grid' }, { to: '/assessment', label: 'Create assessment', icon: 'plus' },
   { to: '/scanner', label: 'Scan papers', icon: 'scan' }, { to: '/insights', label: 'Class insights', icon: 'chart' },
+  { to: '/recommendations', label: 'Teaching recommendations', icon: 'book' }, { to: '/history', label: 'History', icon: 'clock' },
 ];
+const subPages = { '/review': 'Question review', '/print': 'Print sheets', '/review-scans': 'Scan review', '/followup': 'Follow-up', '/feedback': 'Student feedback' };
 
 const emptyAssessment = { id: '', class_id: 'cl_7a', title: '', topic: '', concepts_text: '', status: 'draft', questions: [] };
 const statusLabel = { draft: 'Draft', approved: 'Approved', printed: 'Printed', scanning: 'Scanning', confirmed: 'Results ready' };
@@ -19,22 +24,29 @@ const statusScreen = { draft: '/review', approved: '/print', printed: '/scanner'
 
 function App() {
   const [teacherToken, setTeacherTokenState] = useState(getTeacherToken);
-  const [studentSession, setStudentSession] = useState(null);
+  const [studentSession, setStudentSession] = useState(() => getStudentToken() ? { role: 'student', token: getStudentToken() } : null);
+  const [authNote, setAuthNote] = useState('');
   const [sample, setSample] = useState(fixtureMode);
   const [googleError, setGoogleError] = useState('');
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const previewAvailable = import.meta.env.VITE_MOCK === 'true'; // sample workspace only when asked for: otherwise every flow is live
 
-  useEffect(() => setOnAuthLost(() => setTeacherTokenState('')), []);
+  useEffect(() => setOnAuthLost(() => { setTeacherTokenState(''); setAuthNote(summary().total ? 'Your session ended. Sign in again: your unsynced changes are kept on this device and will sync.' : 'Your session ended. Please sign in again.'); }), []);
+  // A token kept from an earlier visit may have expired: check it once, and learn who it belongs to.
+  useEffect(() => { if (teacherToken && !fixtureMode) api.me().then(m => m.teacher && setTeacherId(m.teacher.id)).catch(() => {}); }, []);
 
   function startSession(session) {
+    setAuthNote('');
     if (session.role === 'student') {
+      setStudentToken(session.token);
       setStudentSession(session);
       navigate('/student', { replace: true });
       return;
     }
     setTeacherToken(session.token);
+    if (session.teacher?.id) { setTeacherId(session.teacher.id); retryBlocked(); } // changes kept while signed out sync now
+    else api.me().then(m => m.teacher && setTeacherId(m.teacher.id)).catch(() => {});
     setTeacherTokenState(session.token);
     setSample(false);
     navigate('/workspace', { replace: true });
@@ -47,14 +59,17 @@ function App() {
       setTeacherToken('');
       setTeacherTokenState('');
       store.set('mt_assessment', '');
+      // unsynced changes stay saved for this teacher (scoped by id) until they sign in again
     }
     setSample(false);
     navigate('/login?role=teacher', { replace: true });
   }
 
-  function signOutStudent() {
-    api.logout(studentSession.token).catch(() => {});
+  function signOutStudent(expired) {
+    if (!expired) api.logout(studentSession.token).catch(() => {});
+    setStudentToken('');
     setStudentSession(null);
+    setAuthNote(expired ? 'Your session ended. Please sign in again.' : '');
     navigate('/login?role=student', { replace: true });
   }
 
@@ -64,21 +79,21 @@ function App() {
   }
   if (pathname === '/login') {
     return <ExperiencePage page="login"><Auth
-      onSession={startSession}
+      onSession={startSession} note={authNote}
       onSample={previewAvailable ? () => { setSample(true); navigate('/workspace'); } : undefined}
       serverField={isNative ? <ServerField /> : null}
       googleSignIn={<>
-        <GoogleButton onToken={token => startSession({ role: 'teacher', token })} onError={setGoogleError} />
+        <GoogleButton onToken={(token, teacher) => startSession({ role: 'teacher', token, teacher })} onError={setGoogleError} />
         {googleError && <p className="field-error" role="alert">{googleError}</p>}
       </>}
     /></ExperiencePage>;
   }
   if (pathname === '/student') {
     return studentSession
-      ? <ExperiencePage page="student" onSignOut={signOutStudent}><StudentHome results={studentSession.results} /></ExperiencePage>
+      ? <ExperiencePage page="student" onSignOut={() => signOutStudent(false)}><StudentHome token={studentSession.token} onExpired={() => signOutStudent(true)} /></ExperiencePage>
       : <Navigate to="/login?role=student" replace />;
   }
-  if (!sample && !teacherToken) return <Navigate to="/login?role=teacher" replace />;
+  if (!sample && !teacherToken) return <Navigate to={studentSession ? '/student' : '/login?role=teacher'} replace />;
   return <TeacherWorkspace key={sample ? 'sample' : teacherToken} isMock={sample} teacherToken={teacherToken} onSignOut={signOutTeacher} />;
 }
 
@@ -112,9 +127,21 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pdf, setPdf] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
   const firstPage = useRef(true);
+  const [classes, setClasses] = useState(() => isMock ? [{ id: 'cl_7a', name: '7A' }] : []);
+  const [classId, setClassIdState] = useState(() => isMock ? 'cl_7a' : store.get('mt_class'));
+  const [subject, setSubjectState] = useState(() => store.get('mt_subject') || 'mathematics');
+  const setClassId = (id) => { setClassIdState(id); store.set('mt_class', id); };
+  const setSubject = (s) => { setSubjectState(s); store.set('mt_subject', s); };
+  useEffect(() => { if (!isMock) api.classes().then(c => { setClasses(c); if (c.length && !c.some(x => x.id === store.get('mt_class'))) setClassId(c[0].id); }).catch(() => {}); }, []);
+  // A synced offline edit: pick up the new version so the next edit starts from it.
+  function onSynced(e, result) {
+    if (e.id.startsWith('question:')) setAssessment(a => ({ ...a, questions: a.questions.map(q => q.id === result.id ? { ...q, version: result.version, validation_errors: result.validation_errors } : q) }));
+    if (e.id.startsWith('scan:') && store.get('mt_assessment')) api.scans(store.get('mt_assessment')).then(setScanProgress).catch(() => {});
+  }
   // type: success | info | error. Errors stay longer and are announced right away.
   const flash = (message, type = 'error') => { const id = Date.now(); setToast({ id, message, type }); window.setTimeout(() => setToast(t => t?.id === id ? null : t), type === 'error' ? 8000 : 4500); };
 
@@ -134,7 +161,9 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   async function openAssessment(id, go = false) {
     try {
       const opened = await api.assessment(id);
-      setAssessment(opened); setInsights(null);
+      const local = outbox();
+      opened.questions = opened.questions.map(q => { const e = local.find(x => x.id === `question:${q.id}`); return e ? { ...q, ...e.body } : q; });
+      setAssessment(opened); setInsights(null); setPdf(null);
       if (go) navigate(statusScreen[opened.status] || '/workspace');
     } catch (error) { if (!go) store.set('mt_assessment', ''); flash(error.message); }
   }
@@ -143,19 +172,24 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
     setBusy(true);
     try {
       const result = isMock ? { ...demo.assessment, id: `as_${Date.now()}`, title: `${values.topic} check`, topic: values.topic.toLowerCase(), class_id: values.class_id, concepts_text: values.concepts_text, status: 'draft', questions: [...demo.assessment.questions, ...demo.question_bank].slice(0, values.num_questions).map((q, i) => ({ ...q, id: `q_${Date.now()}_${i}`, status: 'draft', source: 'sample' })) } : await api.generate(values);
-      setAssessment(result); if (result.notes?.length) flash(result.notes.join(' '), 'info'); else flash(`${result.questions.length} questions drafted. Check each one before approving.`, 'success'); setInsights(null); setScanProgress({ total: 0, accepted: 0, needs_review: 0, remaining: 0, scans: [] }); navigate('/review');
+      setAssessment(result); setPdf(null); if (result.notes?.length) flash(result.notes.join(' '), 'info'); else flash(`${result.questions.length} questions drafted. Check each one before approving.`, 'success'); setInsights(null); setScanProgress({ total: 0, accepted: 0, needs_review: 0, remaining: 0, scans: [] }); navigate('/review');
     } catch (error) { flash(error.message); }
     finally { setBusy(false); }
   }
 
   async function approve() {
     if (!assessment?.questions?.length) return flash('Add at least one question before approval.');
-    const invalid = assessment.questions.some(q => !q.stem?.trim() || Object.values(q.options || {}).some(v => !v?.trim()) || !q.answer || !['A', 'B', 'C', 'D'].includes(q.answer));
-    if (invalid) return flash('Each question needs a prompt, four options and a correct answer.');
+    const invalid = assessment.questions.some(q => !q.stem?.trim() || q.type !== 'descriptive' && (Object.values(q.options || {}).some(v => !v?.trim()) || !q.answer || !['A', 'B', 'C', 'D'].includes(q.answer)));
+    if (invalid) return flash('Each question needs a prompt; multiple-choice questions also need four options and a correct answer.');
     setBusy(true);
     try {
       if (isMock) { const updated = { ...assessment, status: 'approved', questions: assessment.questions.map(q => ({ ...q, status: 'approved' })) }; setAssessment(updated); navigate('/print'); }
-      else { for (const q of assessment.questions) await api.editQuestion(q.id, q); const updated = await api.approve(assessment.id); setAssessment(updated); navigate('/print'); }
+      else {
+        await flush(onSynced);
+        const left = outbox().filter(e => assessment.questions.some(q => e.id === `question:${q.id}`));
+        if (left.length) throw new Error(left.some(e => e.status === 'conflict') ? 'A question was changed somewhere else. Choose which version to keep, then approve.' : left.some(e => e.status === 'pending') ? 'You seem to be offline. Your edits are saved on this device; approve when you are back online.' : left[0].error || 'Some edits were not accepted. Check the questions.');
+        const updated = await api.approve(assessment.id); setAssessment(updated); navigate('/print');
+      }
     }
     catch (error) {
       if (error.validationErrors) setAssessment(current => ({ ...current, questions: current.questions.map(q => ({ ...q, validation_errors: error.validationErrors[q.id] || [] })) }));
@@ -164,12 +198,22 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
     finally { setBusy(false); }
   }
 
-  function printSheets() {
+  async function printSheets() {
     if (isMock) return flash('You are in the sample workspace (fixture data). Choose Exit sample and sign in as a teacher to print real question papers.', 'info');
-    // In the Android app an outside link opens in the phone's browser; on the web it opens a new tab.
-    if (isNative) window.location.href = printUrl(assessment.id);
-    else if (!window.open(printUrl(assessment.id), '_blank')) return flash('Allow pop-ups to open the generated PDF, then try again.');
-    if (assessment.status === 'approved') setAssessment({ ...assessment, status: 'printed' });
+    // In the Android app the PDF opens in the phone's browser (the WebView can't show PDFs); it signs in with ?token=.
+    if (isNative) { window.location.href = printUrl(assessment.id); return; }
+    setBusy(true);
+    try {
+      const blob = await api.printPdf(assessment.id);
+      const pages = ((await blob.text()).match(/\/Type\s*\/Page[^s]/g) || []).length;
+      if (pdf) URL.revokeObjectURL(pdf.url);
+      const next = { url: URL.createObjectURL(blob), name: `MindTrace_${assessment.id}.pdf`, pages };
+      setPdf(next);
+      Object.assign(document.createElement('a'), { href: next.url, download: next.name }).click();
+      setAssessment(await api.assessment(assessment.id));
+      flash(`PDF downloaded: ${pages} page${pages === 1 ? '' : 's'}, one per student. Print at 100% on A4.`, 'success');
+    } catch (error) { flash(error.offline ? 'Generating the PDF needs a connection to the MindTrace server.' : error.message); }
+    finally { setBusy(false); }
   }
 
   async function upload(file, rollNumber) {
@@ -198,9 +242,20 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   useEffect(() => { if (!isMock && teacherToken && assessment?.id && assessment.status === 'confirmed') loadInsights(); }, [assessment?.id, assessment?.status, teacherToken]);
 
   // body: {answers, student_id?, roll_number?, confirmed, replace?, discard?}. Returns the scan, or null on error.
-  async function reviewScan(scanId, body, okMessage = 'Paper confirmed.') {
-    try { const r = await api.reviewScan(scanId, body); setScanProgress(await api.scans(assessment.id)); if (okMessage) flash(okMessage, 'success'); return r; }
-    catch (error) { flash(error.message); return null; }
+  async function reviewScan(scanId, body, okMessage = 'Paper confirmed.', version) {
+    const id = `scan:${scanId}`;
+    try {
+      const r = await api.reviewScan(scanId, version ? { ...body, base_version: entry(id)?.base_version ?? version } : body);
+      drop(id); setScanProgress(await api.scans(assessment.id)); if (okMessage) flash(okMessage, 'success'); return r;
+    } catch (error) {
+      if (version && !body.discard && (error.offline || error.status === 401)) {
+        queue({ id, label: 'Scan review', method: 'PATCH', path: `/scans/${scanId}/review`, body, baseVersion: version });
+        flash(error.offline ? 'You are offline. This review is saved on this device and will sync when you reconnect.' : 'Saved on this device. Sign in again to sync it.', 'info');
+        return null;
+      }
+      if (error.code === 'conflict') api.scans(assessment.id).then(setScanProgress).catch(() => {});
+      flash(error.message); return null;
+    }
   }
   async function confirmScans() {
     setBusy(true);
@@ -210,22 +265,22 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   }
 
   const sampleTag = isMock && <span className="mode-tag" title="Uses labelled fixture data"><span className="mode-dot" /> Mock mode · sample data, not live</span>;
-  const context = { assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock };
+  const context = { classes, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock };
 
-  const mobileNav = [nav[0], nav[1], nav[3], nav[4], nav[5]];
+  const mobileNav = nav;
   return <div className="shell workspace-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <div className={`busy-bar ${loading ? 'on' : ''}`} aria-hidden="true" />
     <aside className="sidebar">
       <Link to="/" className="brand" aria-label="MindTrace home"><Wordmark /><span className="brand-mini" aria-hidden="true">M</span></Link>
       <div className="school-label">WORKSPACE</div>
-      <nav aria-label="Main navigation" className="side-nav">{nav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Icon name={item.icon} /><span>{item.label}</span>{item.to === '/review' && assessment.status === 'draft' && <i className="nav-pip" />}</NavLink>)}</nav>
+      <nav aria-label="Main navigation" className="side-nav">{nav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Icon name={item.icon} /><span>{item.label}</span>{item.to === '/assessment' && assessment.id && assessment.status === 'draft' && <i className="nav-pip" />}</NavLink>)}</nav>
       <div className="sidebar-spacer" />
       <div className="privacy-note"><span className="privacy-icon"><Icon name="shield" size={17} /></span><div><strong>Teacher-led insights</strong><p>Patterns are evidence for review, never a diagnosis.</p></div></div>
-      <button className="profile-button" onClick={() => navigate('/student')}><span className="avatar">{isMock?'AS':'T'}</span><span><b>{isMock?'Alex Morgan':'Teacher'}</b><small>{isMock?'Mathematics teacher':'Connected account'}</small></span><span className="profile-more">···</span></button>
+      <button className="profile-button" onClick={() => navigate('/workspace')}><span className="avatar">{isMock?'AS':'T'}</span><span><b>{isMock?'Alex Morgan':'Teacher'}</b><small>{isMock?'Mathematics teacher':'Connected account'}</small></span><span className="profile-more">···</span></button>
     </aside>
     <div className="main-area">
-      <header className="topbar"><button className="mobile-brand" onClick={() => navigate('/')} aria-label="MindTrace home"><Wordmark /></button><div className="crumb"><span>Workspace</span><b>/</b><strong>{nav.find(n => n.to === location.pathname)?.label || { '/review-scans': 'Scan review', '/followup': 'Follow-up' }[location.pathname] || 'Overview'}</strong></div><div className="top-actions">{sampleTag}<span className="teacher-chip"><span className="avatar mini">{isMock?'AM':'T'}</span><span>{isMock?'Alex Morgan':'Teacher'}</span></span><button className="text-button" onClick={onSignOut}>{isMock ? 'Exit sample' : 'Sign out'}</button></div></header>
+      <header className="topbar"><button className="mobile-brand" onClick={() => navigate('/')} aria-label="MindTrace home"><Wordmark /></button><div className="crumb"><span>Workspace</span><b>/</b><strong>{nav.find(n => n.to === location.pathname)?.label || subPages[location.pathname] || (location.pathname.startsWith('/students/') ? 'Student report' : 'Overview')}</strong></div><div className="top-actions">{sampleTag}{!isMock && <SyncBadge onSynced={onSynced} />}<span className="teacher-chip"><span className="avatar mini">{isMock?'AM':'T'}</span><span>{isMock?'Alex Morgan':'Teacher'}</span></span><button className="text-button" onClick={onSignOut}>{isMock ? 'Exit sample' : 'Sign out'}</button></div></header>
       <main id="main-content" tabIndex="-1" className="content" aria-busy={loading}><div key={location.pathname} className="page-enter"><Routes>
         <Route path="/workspace" element={<Dashboard {...context} />} />
         <Route path="/assessment" element={<NewAssessment {...context} />} />
@@ -235,20 +290,18 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
         <Route path="/review-scans" element={<ReviewScans {...context} />} />
         <Route path="/insights" element={<InsightsPage {...context} />} />
         <Route path="/followup" element={<Followup {...context} />} />
+        <Route path="/recommendations" element={<RecommendationsPage {...context} />} />
+        <Route path="/feedback" element={<FeedbackPage {...context} />} />
+        <Route path="/history" element={<HistoryPage {...context} />} />
+        <Route path="/students/:id" element={<StudentReportPage />} />
         <Route path="*" element={<Navigate to="/workspace" replace />} />
       </Routes></div></main>
     </div>
-    <nav className="mobile-nav" aria-label="Mobile navigation">{mobileNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} aria-label={item.label} className={({ isActive }) => isActive ? 'mobile-active' : ''}><Icon name={item.icon} size={21} /><span>{item.label.split(' ')[0]}</span></NavLink>)}</nav>
+    <nav className="mobile-nav" aria-label="Mobile navigation">{mobileNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} aria-label={item.label} className={({ isActive }) => isActive ? 'mobile-active' : ''}><Icon name={item.icon} size={21} /><span>{{ 'Create assessment': 'Create', 'Teaching recommendations': 'Teach', 'Class insights': 'Insights', 'Scan papers': 'Scan' }[item.label] || item.label}</span></NavLink>)}</nav>
     {toast && <div key={toast.id} className={`toast toast-${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}><span className="toast-badge" aria-hidden="true">{toast.type === 'success' ? <Icon name="check" size={15} /> : toast.type === 'error' ? '!' : 'i'}</span><span className="toast-text">{toast.message}</span><button aria-label="Dismiss notification" onClick={() => setToast(null)}><Icon name="close" size={16} /></button>{toast.type === 'success' && <i className="wedges" aria-hidden="true"><i /></i>}</div>}
   </div>;
 }
 
-function PageHeading({ eyebrow, title, description, action }) { return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
-function Button({ children, variant = 'primary', icon, className = '', ...props }) { return <button className={`button ${variant} ${className}`} {...props}>{icon && <Icon name={icon} size={17} />}{children}</button>; }
-function Panel({ children, className = '', interactive = false }) {
-  if (interactive) return <PaperSurface className={`panel ${className}`}>{children}</PaperSurface>;
-  return <section className={`panel ${className}`}>{children}</section>;
-}
 
 // "Continue with Google" (Google Identity Services). Shown only when the server has a Google client ID, and not
 // in the Android app: Google blocks sign-in inside app web views (a native sign-in can post to /auth/google later).
@@ -269,7 +322,7 @@ function GoogleButton({ onToken, onError }) {
       return loadGis().then(() => {
         if (!live) return;
         window.google.accounts.id.initialize({ client_id: clientId, auto_select: false, cancel_on_tap_outside: true, context: 'signin', ux_mode: 'popup',
-          callback: async ({ credential }) => { setState('working'); onError(''); try { onToken((await api.googleLogin({ credential })).token); } catch (e) { onError(e.message); setState('ready'); } } });
+          callback: async ({ credential }) => { setState('working'); onError(''); try { const r = await api.googleLogin({ credential }); onToken(r.token, r.teacher); } catch (e) { onError(e.message); setState('ready'); } } });
         window.google.accounts.id.renderButton(slot.current, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular', logo_alignment: 'left', width: 300 });
         setState('ready');
       }, () => live && setState('unavailable'));
@@ -285,8 +338,9 @@ function ServerField() {
   return <details className="server-field" open={isNative && !value}><summary>Server address <small>{value || (isNative ? 'not set' : 'this website')}</small></summary><label className="field">Address<input type="url" inputMode="url" autoCapitalize="off" spellCheck="false" placeholder="https://….trycloudflare.com" value={value} onChange={e=>{setValue(e.target.value);setServer(e.target.value);}}/><small>Leave empty on the website. In the Android app, paste the backend's https tunnel address.</small></label></details>;
 }
 
-function Dashboard({ assessment, insights, scanProgress, openAssessment, isMock }) {
+function Dashboard({ assessment, insights, scanProgress, openAssessment, isMock, classes, classId, setClassId, subject, setSubject }) {
   const [list, setList] = useState(null); const [results, setResults] = useState([]);
+  const shown = Array.isArray(list) ? list.filter(a => a.class_id === classId && (a.subject || 'mathematics') === subject) : [];
   const loadList = () => { setList(null); api.assessments().then(setList).catch(() => setList('error')); };
   useEffect(() => { if (!isMock) loadList(); }, []);
   useEffect(() => { if (!isMock && assessment.id) api.results(assessment.id).then(setResults).catch(() => setResults([])); }, [assessment.id, assessment.status]);
@@ -298,18 +352,19 @@ function Dashboard({ assessment, insights, scanProgress, openAssessment, isMock 
   ];
   return <>
     <div className="welcome-band"><div className="welcome-copy"><span className="welcome-kicker"><span className="live-dot" /> YOUR CLASSROOM, IN FOCUS</span><h1>{isMock?'Good morning, Alex.':'Welcome to your workspace.'}</h1><p>See what your students may be thinking — and where to go next.</p><Link to="/assessment" className="button button-light"><Icon name="plus" size={17} /> Create an assessment <Icon name="arrow" size={17} /></Link></div><div className="welcome-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="art-card card-back">⅓ + ⅓<div className="art-lines"/></div><div className="art-card card-front"><span>{isMock?'CLASS SIGNAL':'PAPER → INSIGHT'}</span><b>{isMock?'2/6':'MAP'}</b><i>{isMock?'3 students chose this':'Teacher-led learning'}</i></div><span className="art-spark spark-one"/><span className="art-spark spark-two"/></div></div>
-    <div className="metric-grid">{metrics.map((m, i) => <Panel key={m.label} className="metric"><div className={`metric-icon tone-${i}`}><Icon name={m.icon} /></div><div><span className="metric-label">{m.label}</span><strong>{m.value}</strong><small>{m.note}</small></div><span className="metric-index">0{i + 1}</span></Panel>)}</div>
-    <div className="dashboard-grid"><Panel className="workflow-panel" interactive><div className="section-heading"><div><span className="eyebrow">YOUR WORKFLOW</span><h2>{assessment.id ? assessment.title : 'Start your first assessment'}</h2><p>{assessment.id ? `Class 7A · ${assessment.topic || 'Lesson'} · Updated today` : 'Create a short check-in from the concepts you just taught.'}</p></div><span className={`status-pill ${assessment.status==='confirmed'?'status-complete':'status-draft'}`}><span/>{assessment.id ? (assessment.status==='confirmed'?'Results ready':assessment.status.replaceAll('_',' ')) : 'Not started'}</span></div>{assessment.id?<div className="stepper">{[{n:'01',label:'Create'},{n:'02',label:'Review'},{n:'03',label:'Print'},{n:'04',label:'Scan'},{n:'05',label:'Understand'}].map((s,i)=>{const stage={draft:1,approved:2,printed:3,scanning:4,confirmed:5}[assessment.status]||1;return <div key={s.label} className={`step ${i<stage?'done':''} ${i===stage?'current':''}`}><span className="step-node">{i<stage?<Icon name="check" size={14}/>:s.n}</span><div className="step-line"/><small>{s.label}</small></div>})}</div>:<Link to="/assessment" className="empty-dashboard-link">Build a check-in from today's lesson <Icon name="arrow" size={16}/></Link>}<div className="progress-footer"><div><span>Scans confirmed</span><strong>{scanProgress.accepted} <small>/ {scanProgress.total}</small></strong></div><div className="progress-track"><span style={{width:`${scanProgress.total ? scanProgress.accepted / scanProgress.total * 100 : 0}%`}}/></div><Link to="/insights" className="text-link">View class insights <Icon name="arrow" size={16}/></Link></div></Panel>
+    {isMock ? <div className="metric-grid">{metrics.map((m, i) => <Panel key={m.label} className="metric"><div className={`metric-icon tone-${i}`}><Icon name={m.icon} /></div><div><span className="metric-label">{m.label}</span><strong>{m.value}</strong><small>{m.note}</small></div><span className="metric-index">0{i + 1}</span></Panel>)}</div>
+      : classId ? <ClassOverview classes={classes} classId={classId} subject={subject} setClassId={setClassId} setSubject={setSubject} /> : <Panel className="class-overview"><p className="list-empty" role="status">{classes.length ? 'Choose a class.' : 'Loading your classes…'}</p></Panel>}
+    <div className="dashboard-grid"><Panel className="workflow-panel" interactive><div className="section-heading"><div><span className="eyebrow">YOUR WORKFLOW</span><h2>{assessment.id ? assessment.title : 'Start your first assessment'}</h2><p>{assessment.id ? `Class ${classes.find(c => c.id === assessment.class_id)?.name || ''} · ${subjectName(assessment.subject)} · ${assessment.topic || 'Lesson'}` : 'Create a short check-in from the concepts you just taught.'}</p></div><span className={`status-pill ${assessment.status==='confirmed'?'status-complete':'status-draft'}`}><span/>{assessment.id ? (assessment.status==='confirmed'?'Results ready':assessment.status.replaceAll('_',' ')) : 'Not started'}</span></div>{assessment.id?<div className="stepper">{[{n:'01',label:'Create'},{n:'02',label:'Review'},{n:'03',label:'Print'},{n:'04',label:'Scan'},{n:'05',label:'Understand'}].map((s,i)=>{const stage={draft:1,approved:2,printed:3,scanning:4,confirmed:5}[assessment.status]||1;return <div key={s.label} className={`step ${i<stage?'done':''} ${i===stage?'current':''}`}><span className="step-node">{i<stage?<Icon name="check" size={14}/>:s.n}</span><div className="step-line"/><small>{s.label}</small></div>})}</div>:<Link to="/assessment" className="empty-dashboard-link">Build a check-in from today's lesson <Icon name="arrow" size={16}/></Link>}<div className="progress-footer"><div><span>Scans confirmed</span><strong>{scanProgress.accepted} <small>/ {scanProgress.total}</small></strong></div><div className="progress-track"><span style={{width:`${scanProgress.total ? scanProgress.accepted / scanProgress.total * 100 : 0}%`}}/></div><Link to="/insights" className="text-link">View class insights <Icon name="arrow" size={16}/></Link></div></Panel>
       {insights?.misconceptions?.length?<Panel className="signal-panel"><div className="section-heading"><div><span className="eyebrow">A PATTERN TO EXPLORE</span><h2>{insights.misconceptions[0].label}</h2></div><span className="signal-icon"><Icon name="arrow" size={16}/></span></div><div className="signal-quote"><span className="quote-mark">“</span><p>{assessment.questions.find(q=>q.id===insights.misconceptions[0].evidence[0]?.question_id)?.stem || 'A shared answer pattern appeared.'}</p><div className="answer-line"><span className="answer-chip">{assessment.questions.find(q=>q.id===insights.misconceptions[0].evidence[0]?.question_id)?.options?.[insights.misconceptions[0].evidence[0]?.option] || insights.misconceptions[0].evidence[0]?.option}</span><span className="answer-meter"><i style={{width:`${insights.papers.verified ? insights.misconceptions[0].students_affected/insights.papers.verified*100:0}%`}}/></span><b>{insights.misconceptions[0].students_affected} of {insights.papers.verified}</b></div></div><p className="signal-copy">{insights.misconceptions[0].why_we_think_so}</p><Link to="/insights" className="text-link">Explore the evidence <Icon name="arrow" size={16}/></Link></Panel>:<Panel className="signal-panel"><div className="section-heading"><div><span className="eyebrow">YOUR NEXT STEP</span><h2>See a clearer picture</h2></div><span className="signal-icon"><Icon name="chart" size={16}/></span></div><p className="signal-copy">Once papers are scanned and confirmed, MindTrace will show the response patterns and the evidence behind them here.</p><Link to="/scanner" className="text-link">Open classroom scanner <Icon name="arrow" size={16}/></Link></Panel>}</div>
     {!isMock&&<div className="dashboard-lists">
-      <Panel className="list-panel"><div className="section-heading"><div><span className="eyebrow">YOUR ASSESSMENTS</span><h2>Past assessments</h2><p>Newest first. Tap one to open it.</p></div></div>
-        {list===null?<p className="list-empty" role="status">Loading your assessments…</p>:list==='error'?<p className="list-empty" role="alert">Couldn’t load your assessments. <button className="text-button" onClick={loadList}>Try again</button></p>:list.length?<div className="assessment-list">{list.map(a=><button key={a.id} className={`assessment-row ${a.id===assessment.id?'open':''}`} onClick={()=>openAssessment(a.id,true)}><span><b>{a.title}</b><small>{a.topic} · {new Date(a.created_at).toLocaleDateString()}{a.parent_assessment_id?' · follow-up':''}</small></span><span className={`status-pill ${a.status==='confirmed'?'status-complete':'status-draft'}`}><span/>{statusLabel[a.status]||a.status}</span></button>)}</div>:<p className="list-empty">No assessments yet. <Link to="/assessment" className="text-link">Create one</Link></p>}
+      <Panel className="list-panel"><div className="section-heading"><div><span className="eyebrow">YOUR ASSESSMENTS</span><h2>Past assessments</h2><p>Class {classes.find(c => c.id === classId)?.name} · {subjectName(subject)}. Newest first. Tap one to open it.</p></div></div>
+        {list===null?<p className="list-empty" role="status">Loading your assessments…</p>:list==='error'?<p className="list-empty" role="alert">Couldn’t load your assessments. <button className="text-button" onClick={loadList}>Try again</button></p>:shown.length?<div className="assessment-list">{shown.map(a=><button key={a.id} className={`assessment-row ${a.id===assessment.id?'open':''}`} onClick={()=>openAssessment(a.id,true)}><span><b>{a.title}</b><small>{a.topic} · {new Date(a.created_at).toLocaleDateString()}{a.parent_assessment_id?' · follow-up':''}</small></span><span className={`status-pill ${a.status==='confirmed'?'status-complete':'status-draft'}`}><span/>{statusLabel[a.status]||a.status}</span></button>)}</div>:<p className="list-empty">No assessments yet. <Link to="/assessment" className="text-link">Create one</Link></p>}
       </Panel>
       {assessment.id&&<Panel className="list-panel"><div className="section-heading"><div><span className="eyebrow">STUDENT SHEETS · TEACHER ONLY</span><h2>{assessment.title}</h2><p>One row per printed sheet.</p></div></div>
-        {results.length?<table className="results-table"><thead><tr><th>Roll</th><th>Student</th><th>Scan</th><th>Correct</th></tr></thead><tbody>{results.map(r=><tr key={r.short_code}><td>{r.roll_no||'–'}</td><td>{r.student.display_name} <small>{r.student.student_code}</small></td><td>{r.scan_status.replace('_',' ')}</td><td>{r.scan_status==='missing'?'–':`${r.correct}/${r.total}`}</td></tr>)}</tbody></table>:<p className="list-empty">Sheets appear here after printing.</p>}
+        {results.length?<table className="results-table"><thead><tr><th>Roll</th><th>Student</th><th>Scan</th><th>Correct</th></tr></thead><tbody>{results.map(r=><tr key={r.short_code}><td>{r.roll_no||'–'}</td><td><Link to={`/students/${r.student.id}`} className="text-link">{r.student.display_name}</Link> <small>{r.student.student_code}</small></td><td>{r.scan_status.replace('_',' ')}</td><td>{r.scan_status==='missing'?'–':`${r.correct}/${r.total}`}</td></tr>)}</tbody></table>:<p className="list-empty">Sheets appear here after printing.</p>}
       </Panel>}
     </div>}
-    <div className="bottom-callout"><div className="callout-icon"><Icon name="users" size={20}/></div><div><b>Built around your classroom</b><span>Paper-first assessments keep student devices out of the equation.</span></div><Link to="/student" className="text-link">Student view <Icon name="arrow" size={16}/></Link></div>
+    <div className="bottom-callout"><div className="callout-icon"><Icon name="users" size={20}/></div><div><b>Built around your classroom</b><span>Paper-first assessments keep student devices out of the equation.</span></div><Link to="/history" className="text-link">History <Icon name="arrow" size={16}/></Link></div>
   </>;
 }
 
@@ -317,22 +372,49 @@ function Dashboard({ assessment, insights, scanProgress, openAssessment, isMock 
 function SourceTag({ source }) { const label={ai:'AI draft',sample:'Saved sample',teacher:'Edited by you'}[source]; return label?<span className={`source-tag source-${source}`}>{label}</span>:null; }
 const aiStatus = { gemini: 'Gemini drafts the questions. You check and approve each one.', 'app.ai': 'The AI module drafts the questions. You check and approve each one.', samples: 'Gemini isn’t set up yet, so you’ll get saved sample questions (clearly labelled).' };
 
-function NewAssessment({ generate, busy, isMock }) {
-  // The signed-in teacher's own classes (the demo teacher has 7A; the APK test teacher has 7T).
-  const [classes, setClasses] = useState([{ id: 'cl_7a', name: '7A' }]); const [classId, setClassId] = useState('cl_7a');
-  useEffect(() => { if (!isMock) api.classes().then(c => { if (c.length) { setClasses(c); setClassId(c[0].id); } }).catch(() => {}); }, []);
+const topicFor = { mathematics: 'Fractions', physics: 'Forces and units', chemistry: 'Stoichiometry', biology: 'Inheritance', engineering: 'Design trade-offs', technology: 'Algorithms' };
+function NewAssessment({ generate, busy, isMock, classes, classId, setClassId, subject, setSubject }) {
   const [ai, setAi] = useState(null);
   useEffect(() => { if (!isMock) api.health().then(h => setAi(h.ai_provider)).catch(() => {}); }, []);
-  const [topic, setTopic] = useState('Fractions'); const [concepts, setConcepts] = useState('Adding fractions with the same denominator\nUnderstanding numerators and denominators\nSimplifying fractions'); const [count, setCount] = useState('3'); const [error, setError] = useState('');
-  function submit(e) { e.preventDefault(); if (!concepts.trim()) return setError('Add at least one concept taught in the lesson.'); setError(''); generate({ class_id: classId, topic: topic.trim(), concepts_text: concepts.trim(), num_questions: Number(count) }); }
-  return <><PageHeading eyebrow="ASSESSMENT BUILDER · 01 OF 04" title="Start with the lesson." description="Tell MindTrace what you covered. It will draft a short check for understanding." action={<span className="quiet-badge"><Icon name="clock" size={15}/> About 3 minutes</span>}/><div className="form-layout"><Panel className="form-panel"><div className="form-intro"><span className="step-bubble">01</span><div><h2>Lesson details</h2><p>Keep the assessment focused on what students have already seen.</p></div></div><form onSubmit={submit} noValidate><div className="field-row"><label className="field">Class<select value={classId} onChange={e=>setClassId(e.target.value)}>{classes.map(c=><option key={c.id} value={c.id}>Class {c.name}</option>)}</select><small>Fictional learners only</small></label><label className="field">Subject<input value="Mathematics" readOnly aria-label="Subject, Mathematics"/></label></div><label className="field">Topic<input value={topic} onChange={e=>setTopic(e.target.value)} required placeholder="e.g. Fractions"/></label><label className="field">Concepts taught<textarea value={concepts} onChange={e=>setConcepts(e.target.value)} rows="6" placeholder="Paste or type concepts from today's lesson" aria-describedby="concept-help" required/><small id="concept-help">One concept per line works well. Include the ideas you want to check.</small></label><div className="field-row bottom-fields"><label className="field">Number of questions<select value={count} onChange={e=>setCount(e.target.value)}>{[1,2,3,4,5].map(n=><option key={n}>{n}</option>)}</select></label><div className="field helper-field"><span>Question format</span><div className="format-choice"><span className="format-icon">A<span>·</span></span><div><b>Multiple choice</b><small>4 options per question</small></div><Icon name="check" size={17}/></div></div></div>{error&&<div className="field-error" role="alert">{error}</div>}<div className="form-footer"><span><Icon name="shield" size={15}/> {aiStatus[ai]||'You review and approve every question.'}</span><Button type="submit" disabled={busy} aria-busy={busy} icon="arrow">{busy?(ai==='gemini'?'Gemini is drafting…':'Drafting questions…'):'Generate questions'}</Button></div>{busy&&ai==='gemini'&&<p className="busy-hint" role="status">Usually 5–20 seconds. If Gemini is slow or busy, you’ll get labelled sample questions instead.</p>}</form></Panel><aside className="side-explainer"><div className="lesson-note"><div className="note-pin"/><span className="eyebrow">A BETTER KIND OF CHECK-IN</span><h3>Not just whether it’s right. What the answer might tell you.</h3><div className="note-example"><span>⅓ + ⅓</span><Icon name="arrow" size={16}/><b>2/6</b></div><p>A repeated answer can point to a shared way of thinking. MindTrace helps you notice the pattern, with evidence.</p></div><div className="small-trust"><span className="trust-check"><Icon name="check" size={14}/></span><span><b>Teacher stays in control</b><small>AI drafts. You decide what goes to class.</small></span></div><div className="small-trust"><span className="trust-check"><Icon name="check" size={14}/></span><span><b>Evidence before interpretation</b><small>Every pattern is shown with its supporting answers.</small></span></div></aside></div></>;
+  const [topic, setTopic] = useState(topicFor[subject] || 'Fractions'); const [concepts, setConcepts] = useState(subject === 'mathematics' ? 'Adding fractions with the same denominator\nUnderstanding numerators and denominators\nSimplifying fractions' : ''); const [count, setCount] = useState('3'); const [written, setWritten] = useState('0'); const [difficulty, setDifficulty] = useState(''); const [error, setError] = useState('');
+  function pickSubject(s) { setSubject(s); setTopic(topicFor[s]); }
+  function submit(e) { e.preventDefault(); if (!classId) return setError('Choose a class first.'); if (!concepts.trim()) return setError('Paste at least one concept taught in the lesson.'); setError(''); generate({ class_id: classId, subject, topic: topic.trim() || topicFor[subject], concepts_text: concepts.trim(), num_questions: Number(count), num_descriptive: Math.min(Number(written), Number(count)), ...(difficulty && { difficulty }) }); }
+  return <><PageHeading eyebrow="CREATE ASSESSMENT · 01 OF 03" title="Start with the lesson." description="Paste what you covered. MindTrace drafts a short check; you edit and approve every question, then print." action={<span className="quiet-badge"><Icon name="clock" size={15}/> About 3 minutes</span>}/><div className="form-layout"><Panel className="form-panel"><div className="form-intro"><span className="step-bubble">01</span><div><h2>Lesson details</h2><p>Keep the assessment focused on what students have already seen.</p></div></div><form onSubmit={submit} noValidate>
+    <div className="field-row"><label className="field">Class<select value={classId} onChange={e=>setClassId(e.target.value)}>{classes.map(c=><option key={c.id} value={c.id}>Class {c.name}</option>)}</select><small>Fictional learners only</small></label><label className="field">Subject<select value={subject} onChange={e=>pickSubject(e.target.value)}>{SUBJECTS.map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label></div>
+    <label className="field">Topic<input value={topic} onChange={e=>setTopic(e.target.value)} required placeholder={`e.g. ${topicFor[subject]}`}/></label>
+    <label className="field">Concepts taught<textarea value={concepts} onChange={e=>setConcepts(e.target.value)} rows="6" placeholder="Paste or type concepts from today's lesson" aria-describedby="concept-help" required/><small id="concept-help">One concept per line works well. Include the ideas you want to check.</small></label>
+    <div className="field-row bottom-fields"><label className="field">Number of questions<select value={count} onChange={e=>setCount(e.target.value)}>{[1,2,3,4,5].map(n=><option key={n}>{n}</option>)}</select><small>One A4 page holds up to 5.</small></label><label className="field">Written-answer questions<select value={written} onChange={e=>setWritten(e.target.value)}>{[0,1,2].map(n=><option key={n} value={n}>{n===0?'None (all multiple choice)':`${n} of them`}</option>)}</select><small>Students write a few sentences by hand.</small></label></div>
+    <label className="field">Difficulty<select value={difficulty} onChange={e=>setDifficulty(e.target.value)}><option value="">Mixed (easiest first)</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
+    {error&&<div className="field-error" role="alert">{error}</div>}<div className="form-footer"><span><Icon name="shield" size={15}/> {aiStatus[ai]||'You review and approve every question.'} Drafting needs internet when AI is on.</span><Button type="submit" disabled={busy} aria-busy={busy} icon="arrow">{busy?(ai==='gemini'?'Gemini is drafting…':'Drafting questions…'):'Generate questions'}</Button></div>{busy&&ai==='gemini'&&<p className="busy-hint" role="status">Usually 5–20 seconds. If Gemini is slow or busy, you’ll get labelled sample questions instead.</p>}</form></Panel>
+    <aside className="side-explainer"><div className="lesson-note"><div className="note-pin"/><span className="eyebrow">A BETTER KIND OF CHECK-IN</span><h3>Not just whether it’s right. What the answer might tell you.</h3><div className="note-example"><span>⅓ + ⅓</span><Icon name="arrow" size={16}/><b>2/6</b></div><p>A repeated answer can point to a shared way of thinking. Written answers show the reasoning itself; you read them before any feedback reaches a student.</p></div><div className="small-trust"><span className="trust-check"><Icon name="check" size={14}/></span><span><b>Teacher stays in control</b><small>AI drafts. You decide what goes to class.</small></span></div><div className="small-trust"><span className="trust-check"><Icon name="check" size={14}/></span><span><b>Evidence before interpretation</b><small>Every pattern is shown with its supporting answers.</small></span></div></aside></div></>;
 }
 
-function ReviewQuestions({ assessment, setAssessment, approve, busy, generate }) {
+// Edits are saved on this device first and synced in the background (see offline.js).
+let flushTimer;
+function useOutboxTick() { const [, set] = useState(0); useEffect(() => subscribe(() => set(x => x + 1)), []); }
+const syncWord = { pending: 'Saved on this device · pending sync', conflict: 'Changed somewhere else', blocked: 'Saved on this device · sign in to sync', failed: 'Not accepted by the server' };
+function ReviewQuestions({ assessment, setAssessment, approve, busy, generate, isMock, onSynced, flash }) {
+  useOutboxTick();
   const [index, setIndex] = useState(0); const q = assessment.questions[index];
-  function updateQuestion(patch) { const questions = assessment.questions.map((item,i)=>i===index?{...item,...patch}:item); setAssessment({...assessment,questions}); }
+  const [adding, setAdding] = useState(false);
+  function updateQuestion(patch) {
+    const questions = assessment.questions.map((item,i)=>i===index?{...item,...patch}:item); setAssessment({...assessment,questions});
+    if (isMock) return;
+    const id = `question:${q.id}`;
+    queue({ id, label: `Q${index+1}`, method: 'PATCH', path: `/questions/${q.id}`, body: { ...(entry(id)?.body || {}), ...patch }, baseVersion: q.version ?? 1 });
+    clearTimeout(flushTimer); flushTimer = setTimeout(() => flush(onSynced), 1200);
+  }
+  async function addWritten() { setAdding(true); try { const a = await api.addQuestion(assessment.id, { type: 'descriptive', stem: '', concept: '' }); setAssessment(a); setIndex(a.questions.length - 1); } catch (e) { flash(e.message); } finally { setAdding(false); } }
   if (!q) return <><PageHeading eyebrow="QUESTION REVIEW" title="Review your questions" description="Draft an assessment first to see questions here." action={<Link className="button primary" to="/assessment">Create assessment</Link>}/></>;
-  return <><PageHeading eyebrow="ASSESSMENT BUILDER · 02 OF 04" title="Give each question a careful look." description="Check the wording, choices and correct answer before students see it." action={<span className="status-pill status-draft"><span/> {assessment.status==='draft'?'Draft · needs your review':statusLabel[assessment.status]}</span>}/>{assessment.notes?.length>0&&<div className="note-banner" role="status"><Icon name="clock" size={17}/><p>{assessment.notes.join(' ')}</p></div>}<div className="review-layout"><div className="review-main"><div className="question-tabs" role="tablist" aria-label="Questions">{assessment.questions.map((item,i)=><button role="tab" aria-selected={i===index} className={i===index?'selected':''} onClick={()=>setIndex(i)} key={item.id}><span>Q0{i+1}</span><small>{item.status==='approved'?'Ready':'Draft'}</small></button>)}</div><Panel className="question-editor"><div className="editor-top"><div><span className="eyebrow">QUESTION {String(index+1).padStart(2,'0')} <span className="dot-sep">·</span> {q.concept}</span><SourceTag source={q.source}/></div><label className="field stem-field"><span>Question</span><textarea value={q.stem} rows="2" onChange={e=>updateQuestion({stem:e.target.value})}/></label></div>{q.validation_errors?.length>0&&<div className="field-error" role="alert">{q.validation_errors.join(" ")}</div>}<div className="option-editor"><div className="option-heading"><b>Answer options</b><span>Choose the correct answer</span></div>{Object.entries(q.options).map(([key,value])=><div className={`option-row ${q.answer===key?'correct-option':''}`} key={key}><button aria-label={`Mark ${key} as correct`} className={`answer-radio ${q.answer===key?'checked':''}`} onClick={()=>updateQuestion({answer:key})}>{q.answer===key&&<span/>}</button><span className="option-key">{key}</span><input aria-label={`Option ${key}`} value={value} onChange={e=>updateQuestion({options:{...q.options,[key]:e.target.value}})}/>{q.answer===key&&<span className="correct-label"><Icon name="check" size={14}/> Correct</span>}</div>)}</div><div className="distractor-tags" aria-label="Possible misconception tags">{Object.entries(q.distractors || {}).map(([option, detail]) => <span className="distractor-tag" key={option}>Option {option} · Possible: {detail.misconception_id} — {detail.why}</span>)}</div><div className="question-explanation"><div className="explanation-title"><span className="explain-icon">i</span><b>Answer explanation</b><small>Shown after review</small></div><textarea aria-label="Answer explanation" value={q.explanation} rows="2" onChange={e=>updateQuestion({explanation:e.target.value})}/></div></Panel><div className="review-footer"><button className="text-button" disabled={index===0} onClick={()=>setIndex(index-1)}>← Previous question</button><span>{index+1} of {assessment.questions.length} questions</span><button className="text-button" disabled={index===assessment.questions.length-1} onClick={()=>setIndex(index+1)}>Next question →</button></div><div className="approve-footer"><div><b>Ready to approve?</b><span>You can print once all questions are approved.</span></div><Button disabled={busy} onClick={approve} icon="check">{busy?'Saving…':'Approve assessment'}</Button></div></div><aside className="review-aside"><Panel className="review-help"><span className="eyebrow">QUESTION QUALITY</span><h3>Make the thinking visible.</h3><p>Distractors can surface a possible misconception, but they never prove what a student was thinking.</p><div className="quality-item"><span className="quality-dot green"/><span><b>Clear and focused</b><small>One idea at a time</small></span></div><div className="quality-item"><span className="quality-dot amber"/><span><b>Useful distractors</b><small>Wrong options reflect common approaches</small></span></div><div className="review-tagline"><Icon name="shield" size={15}/> Reviewed by you, always</div></Panel>{assessment.status==='draft'&&<button className="regenerate-link" disabled={busy} onClick={()=>generate({class_id:assessment.class_id,topic:assessment.topic,concepts_text:assessment.concepts_text,num_questions:assessment.questions.length})}><Icon name="refresh" size={15} /> {busy?'Drafting…':'Draft new questions'}</button>}</aside></div></>;
+  const local = entry(`question:${q.id}`);
+  const written = q.type === 'descriptive';
+  return <><PageHeading eyebrow="CREATE ASSESSMENT · 02 OF 03" title="Give each question a careful look." description="Check the wording, choices and correct answer before students see it." action={<span className="status-pill status-draft"><span/> {assessment.status==='draft'?'Draft · needs your review':statusLabel[assessment.status]}</span>}/>{assessment.notes?.length>0&&<div className="note-banner" role="status"><Icon name="clock" size={17}/><p>{assessment.notes.join(' ')}</p></div>}
+    {local?.status==='conflict'&&<div className="note-banner conflict-banner" role="alert"><Icon name="shield" size={17}/><p>Q{index+1} was changed somewhere else after you started editing. The other version has {Object.keys(local.body).map(k=>`${k.replace('_',' ')}: “${typeof local.current?.[k]==='object'?Object.values(local.current[k]||{}).join(' / '):local.current?.[k]??''}”`).join('; ')}.</p><Button variant="outline" onClick={()=>{drop(local.id); setAssessment({...assessment,questions:assessment.questions.map(x=>x.id===q.id?local.current:x)});}}>Use the newer version</Button><Button variant="outline" onClick={()=>{keepMine(local.id, local.current?.version); flush(onSynced);}}>Keep my edit</Button></div>}
+    <div className="review-layout"><div className="review-main"><div className="question-tabs" role="tablist" aria-label="Questions">{assessment.questions.map((item,i)=><button role="tab" aria-selected={i===index} className={i===index?'selected':''} onClick={()=>setIndex(i)} key={item.id}><span>Q0{i+1}</span><small>{item.type==='descriptive'?'Written':item.status==='approved'?'Ready':'Draft'}</small></button>)}{assessment.status==='draft'&&!isMock&&assessment.questions.length<5&&<button className="add-question" disabled={adding} onClick={addWritten}><Icon name="plus" size={15}/> {adding?'Adding…':'Written question'}</button>}</div>
+    <Panel className="question-editor"><div className="editor-top"><div><span className="eyebrow">QUESTION {String(index+1).padStart(2,'0')} <span className="dot-sep">·</span> {written?'WRITTEN ANSWER':'MULTIPLE CHOICE'} <span className="dot-sep">·</span> {q.concept}</span><SourceTag source={q.source}/>{local&&<span className={`sync-chip sync-${local.status}`}>{syncWord[local.status]}</span>}</div><label className="field stem-field"><span>Question</span><textarea value={q.stem} rows="2" onChange={e=>updateQuestion({stem:e.target.value})}/></label></div>{q.validation_errors?.length>0&&<div className="field-error" role="alert">{q.validation_errors.join(" ")}</div>}
+      {written?<><label className="field">Concept<input value={q.concept||''} onChange={e=>updateQuestion({concept:e.target.value})} placeholder="e.g. balanced forces"/></label><div className="question-explanation"><div className="explanation-title"><span className="explain-icon">i</span><b>What a full answer includes</b><small>Only you see this. It guides the AI suggestion.</small></div><textarea aria-label="What a full answer includes" value={q.model_answer||''} rows="3" onChange={e=>updateQuestion({model_answer:e.target.value})}/></div><p className="written-note">Printed with a large lined box. Scanned handwriting is transcribed for you to check; you approve any feedback.</p></>
+      :<><div className="option-editor"><div className="option-heading"><b>Answer options</b><span>Choose the correct answer</span></div>{Object.entries(q.options||{}).map(([key,value])=><div className={`option-row ${q.answer===key?'correct-option':''}`} key={key}><button aria-label={`Mark ${key} as correct`} className={`answer-radio ${q.answer===key?'checked':''}`} onClick={()=>updateQuestion({answer:key})}>{q.answer===key&&<span/>}</button><span className="option-key">{key}</span><input aria-label={`Option ${key}`} value={value} onChange={e=>updateQuestion({options:{...q.options,[key]:e.target.value}})}/>{q.answer===key&&<span className="correct-label"><Icon name="check" size={14}/> Correct</span>}</div>)}</div><div className="distractor-tags" aria-label="Possible misconception tags">{Object.entries(q.distractors || {}).map(([option, detail]) => <span className="distractor-tag" key={option}>Option {option} · Possible: {detail.misconception_id} — {detail.why}</span>)}</div><div className="question-explanation"><div className="explanation-title"><span className="explain-icon">i</span><b>Answer explanation</b><small>Shown after review</small></div><textarea aria-label="Answer explanation" value={q.explanation||''} rows="2" onChange={e=>updateQuestion({explanation:e.target.value})}/></div></>}
+    </Panel><div className="review-footer"><button className="text-button" disabled={index===0} onClick={()=>setIndex(index-1)}>← Previous question</button><span>{index+1} of {assessment.questions.length} questions</span><button className="text-button" disabled={index===assessment.questions.length-1} onClick={()=>setIndex(index+1)}>Next question →</button></div><div className="approve-footer"><div><b>Ready to approve?</b><span>Approving needs a connection; edits are kept on this device until then.</span></div><Button disabled={busy} onClick={approve} icon="check">{busy?'Saving…':'Approve assessment'}</Button></div></div><aside className="review-aside"><Panel className="review-help"><span className="eyebrow">QUESTION QUALITY</span><h3>Make the thinking visible.</h3><p>Distractors can surface a possible misconception, but they never prove what a student was thinking.</p><div className="quality-item"><span className="quality-dot green"/><span><b>Clear and focused</b><small>One idea at a time</small></span></div><div className="quality-item"><span className="quality-dot amber"/><span><b>Useful distractors</b><small>Wrong options reflect common approaches</small></span></div><div className="review-tagline"><Icon name="shield" size={15}/> Reviewed by you, always</div></Panel>{assessment.status==='draft'&&<button className="regenerate-link" disabled={busy} onClick={()=>generate({class_id:assessment.class_id,subject:assessment.subject,topic:assessment.topic,concepts_text:assessment.concepts_text,num_questions:assessment.questions.length,num_descriptive:assessment.questions.filter(x=>x.type==='descriptive').length})}><Icon name="refresh" size={15} /> {busy?'Drafting…':'Draft new questions'}</button>}</aside></div></>;
 }
 
 const paperCode = (id) => (id || '').split('_').slice(1).join('_').toUpperCase() || '—';
@@ -342,21 +424,30 @@ function useRoster(classId, isMock) {
   return roster;
 }
 
-function PrintPage({ assessment, printSheets, busy, isMock }) {
+function PrintPage({ assessment, printSheets, busy, isMock, pdf, flash }) {
   const approved = ['approved', 'printed', 'scanning', 'confirmed'].includes(assessment.status);
   const roster = useRoster(assessment.class_id, isMock);
-  return <><PageHeading eyebrow="ASSESSMENT BUILDER · 03 OF 04" title="Ready for paper." description="Every copy is the same. Students write their roll number at the top; MindTrace matches it to your class list when you scan." action={<span className={`status-pill ${approved?'status-complete':'status-draft'}`}><span/>{approved?'Approved for print':'Approval required'}</span>}/><div className="print-layout"><div><Panel className="print-preview-panel"><div className="preview-toolbar"><span><Icon name="printer" size={16}/> A4 QUESTION PAPER</span><span>Portrait · 210 × 297 mm</span></div><div className="paper-preview">
+  return <><PageHeading eyebrow="CREATE ASSESSMENT · 03 OF 03" title="Ready for paper." description="Every copy is the same. Students write their roll number at the top; MindTrace matches it to your class list when you scan." action={<span className={`status-pill ${approved?'status-complete':'status-draft'}`}><span/>{approved?'Approved for print':'Approval required'}</span>}/><div className="print-layout"><div><Panel className="print-preview-panel"><div className="preview-toolbar"><span><Icon name="printer" size={16}/> A4 QUESTION PAPER</span><span>Portrait · 210 × 297 mm</span></div><div className="paper-preview">
     <div className="paper-top"><div><small>ROLL NO.</small><span className="roll-boxes" aria-label="Five boxes for the roll number"><i/><i/><i/><i/><i/></span></div><div><small>CLASS / SECTION</small><span className="class-box"/></div><div className="paper-page"><b>Page 1 of 1</b><small>Paper code</small><code>{paperCode(assessment.id)}</code></div></div>
     <h2>{assessment.title || 'Assessment preview'}</h2><p className="paper-instruction">Write your roll number above. Fill ONE bubble per question with a dark pen, then explain why.</p>
-    {assessment.questions.slice(0,2).map((q,i)=><div key={q.id} className="paper-question"><b>{i+1}. {q.stem}</b><div className="paper-options">{Object.entries(q.options).map(([key,val])=><span key={key}><i/>{key}. {val}</span>)}</div><div className="reason-line">Why did you choose this answer?<i/><i/></div></div>)}
+    {assessment.questions.slice(0,3).map((q,i)=><div key={q.id} className="paper-question"><b>{i+1}. {q.stem}</b>{q.type==='descriptive'?<div className="reason-line written-box">Write your answer here.<i/><i/><i/></div>:<><div className="paper-options">{Object.entries(q.options||{}).map(([key,val])=><span key={key}><i/>{key}. {val}</span>)}</div><div className="reason-line">Why did you choose this answer? (working and notes)<i/><i/></div></>}</div>)}
   </div></Panel><div className="print-note"><Icon name="shield" size={16}/><span>No names or codes identify a student on the paper. Each copy is matched by the roll number the student writes.</span></div></div>
-  <Panel className="print-side"><span className="eyebrow">PRINT PREPARATION</span><h2>Class roster</h2><p>{roster?.length ? `${roster.length} students. Print one copy each.` : 'The PDF has one copy per student in the class.'}</p>
+  <div className="print-side-stack"><Panel className="print-side"><span className="eyebrow">PRINT PREPARATION</span><h2>Class roster</h2><p>{roster?.length ? `${roster.length} students. The PDF has one page per student.` : 'The PDF has one page per student in the class.'}</p>
     {roster===null?<p className="list-empty" role="status">Loading the class list…</p>:roster.length?<div className="roster-list">{roster.map(s=><div key={s.id}><span className="roster-roll">{s.roll_no||'–'}</span><span>{s.display_name}</span></div>)}</div>:<p className="list-empty">No students found for this class.</p>}
-    <div className="print-requirements"><b>Before you print</b><ul><li>Use A4 paper at 100% scale</li><li>Keep the four corner squares visible</li><li>Tell students to write their roll number in the boxes, one character per box</li><li>Ask students to use a dark pen or pencil</li></ul></div><Button className="full-button" disabled={!approved||busy} onClick={printSheets} icon="printer">{busy?'Preparing papers…':'Generate & open PDF'}</Button>{!approved&&<small className="disabled-hint">Approve the questions before printing.</small>}</Panel></div></>;
+    <div className="print-requirements"><b>Before you print</b><ul><li>Use A4 paper at 100% scale (no “fit to page”)</li><li>Keep the four corner squares visible</li><li>Tell students to write their roll number in the boxes, one character per box</li><li>Ask students to use a dark pen or pencil</li></ul></div><Button className="full-button" disabled={!approved||busy} onClick={printSheets} icon="printer">{busy?'Preparing papers…':'Generate PDF'}</Button>{!approved&&<small className="disabled-hint">Approve the questions before printing.</small>}
+    {pdf&&<p className="pdf-ready" role="status"><Icon name="check" size={15}/> PDF ready ({pdf.pages} page{pdf.pages===1?'':'s'}). <a href={pdf.url} target="_blank" rel="noreferrer">Open to print</a> · <a href={pdf.url} download={pdf.name}>Download again</a></p>}
+    {approved&&<Link to="/scanner" className="text-link">Next: scan the completed papers <Icon name="arrow" size={15}/></Link>}</Panel>
+    <PracticePanel assessment={assessment} flash={flash}/></div></div></>;
 }
 
 const stateText = { single: 'Read', blank: 'No mark', multiple: 'More than one mark', ambiguous: 'Unclear mark', unreadable: 'Not readable' };
 const sourceText = { gemini: 'Read by Gemini', bubble_reader: 'Read by the bubble reader (Gemini unavailable)', manual: 'Manual entry: Gemini couldn’t read it', qr_legacy: 'Older QR-based scan' };
+
+function cameraProblem(error) {
+  if (error.name === 'NotAllowedError' || error.name === 'SecurityError') return isNative ? 'Camera access was denied. Allow the camera for MindTrace in Android Settings › Apps › MindTrace › Permissions, or use Upload photo.' : 'Camera access was blocked. Allow the camera for this site in your browser settings (the camera icon in the address bar), or use Upload photo.';
+  if (error.name === 'NotReadableError' || error.name === 'AbortError') return 'The camera is busy in another app. Close it and try again, or use Upload photo.';
+  return 'No camera was found. Upload a photo of the sheet to continue.';
+}
 
 function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
   const videoRef=useRef(null); const streamRef=useRef(null); const [cameraError,setCameraError]=useState(''); const [started,setStarted]=useState(false); const [capturing,setCapturing]=useState(false); const [roll,setRoll]=useState('');
@@ -373,6 +464,8 @@ function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
   }, [started]);
   async function startCamera() {
     setCameraError('');
+    // Browsers only offer the camera on https (or localhost); on a plain http address mediaDevices is missing.
+    if (!navigator.mediaDevices?.getUserMedia) return setCameraError(window.isSecureContext ? 'This browser can’t open the camera. Use Upload photo instead.' : 'The camera only works on a secure (https) address. Open MindTrace through its https address or the Android app, or use Upload photo.');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
       if (!mounted.current || streamRef.current) {
@@ -382,7 +475,7 @@ function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
       streamRef.current = stream;
       setStarted(true);
     } catch (error) {
-      if (mounted.current) setCameraError(error.name === 'NotAllowedError' ? 'Camera access was blocked. Allow access in your browser settings, or upload a photo.' : 'No camera was found. Upload a photo of the sheet to continue.');
+      if (mounted.current) setCameraError(cameraProblem(error));
     }
   }
   function stopCamera() { streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current=null; setStarted(false); }
@@ -415,28 +508,39 @@ function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans
   <Panel className="review-policy"><Icon name="shield"/><span><b>You confirm every paper</b><small>Scores and insights use only confirmed answers and your approved answer key.</small></span><Button variant="outline" disabled={!canConfirm||busy} aria-busy={busy} onClick={()=>canConfirm?confirmScans():flash(isMock?'Sample mode does not submit or confirm fixture scans.':'Check every paper before confirming results.', 'info')}>{busy?'Confirming…':'Confirm results'}</Button></Panel></>;
 }
 
+const textStateWord = { clear: 'Read clearly', unclear: 'Unclear handwriting: check every word', missing: 'Nothing written', not_read: 'Not read automatically: type it from the photo', teacher: 'Corrected by you' };
 function ScanReviewCard({ scan, reviewScan, assessment, roster }) {
-  const [studentId,setStudentId]=useState(scan.student?.id||''); const [saving,setSaving]=useState('');
-  const [answers,setAnswers]=useState(()=>Object.fromEntries(scan.answers.map(a=>[a.question_id,a.final||'']))); // unclear = empty: the teacher must choose
+  useOutboxTick();
+  const saved = entry(`scan:${scan.scan_id}`); // an edit kept on this device (offline, or waiting to sync)
+  const fromSaved = (qid, key) => saved?.body?.answers?.find(a => a.question_id === qid)?.[key];
+  const [studentId,setStudentId]=useState(saved?.body?.student_id||scan.student?.id||''); const [saving,setSaving]=useState('');
+  const [answers,setAnswers]=useState(()=>Object.fromEntries(scan.answers.map(a=>[a.question_id,fromSaved(a.question_id,'final')??a.final??'']))); // unclear = empty: the teacher must choose
+  const [texts,setTexts]=useState(()=>Object.fromEntries(scan.answers.map(a=>[a.question_id,fromSaved(a.question_id,'text')??a.text??''])));
   const dup = scan.status === 'duplicate'; const student = roster.find(s=>s.id===studentId);
   const missing = scan.answers.filter(a=>!answers[a.question_id]).length;
   async function act(kind) {
     setSaving(kind);
-    try {
-      const body = kind === 'discard' ? { discard: true } : { confirmed: true, replace: dup, answers: Object.entries(answers).filter(([,v])=>v).map(([question_id, final]) => ({ question_id, final })), ...(studentId && studentId !== scan.student?.id ? { student_id: studentId } : {}) };
-      await reviewScan(scan.scan_id, body, kind === 'discard' ? 'Photo discarded.' : `${student ? `Roll ${student.roll_no} · ${student.display_name}` : 'Paper'} confirmed.`);
-    } finally { setSaving(''); }
+    const body = kind === 'discard' ? { discard: true } : { confirmed: kind === 'confirm', replace: dup && kind === 'confirm',
+      answers: scan.answers.map(a => ({ question_id: a.question_id, ...(answers[a.question_id] && { final: answers[a.question_id] }), ...((texts[a.question_id] || '') !== (a.text || '') && { text: texts[a.question_id] }) })),
+      ...(studentId && studentId !== scan.student?.id ? { student_id: studentId } : {}) };
+    try { await reviewScan(scan.scan_id, body, kind === 'discard' ? 'Photo discarded.' : kind === 'draft' ? 'Changes saved. The paper still needs your confirmation.' : `${student ? `Roll ${student.roll_no} · ${student.display_name}` : 'Paper'} confirmed.`, scan.version); }
+    finally { setSaving(''); }
   }
   return <Panel className="scan-review-card"><div className="scan-review-head"><div><span className="eyebrow">ROLL {scan.roll_number?.read || '—'} · {sourceText[scan.extracted_by] || 'Scanned paper'}</span><h2>{scan.student ? `${scan.student.display_name}` : 'Who is this?'}</h2></div><span className={`status-pill ${dup?'status-fixture':'status-draft'}`}><span/>{dup?'Already confirmed':'To check'}</span></div>
+    {saved&&<p className={`sync-chip sync-${saved.status}`} role="status">{syncWord[saved.status]}{saved.status==='conflict'?': this paper was changed elsewhere. Reload the queue to see the newer version, then apply your change.':''}{saved.error&&saved.status!=='conflict'?` (${saved.error})`:''}</p>}
     {scan.warnings.length>0&&<ul className="scan-warnings">{scan.warnings.map(w=><li key={w.code}>{w.message}</li>)}</ul>}
     <div className="scan-review-body">
       {scan.image_url&&<a className="scan-photo" href={mediaUrl(scan.image_url)} target="_blank" rel="noreferrer"><img src={mediaUrl(scan.image_url)} alt={`Photo of the paper, roll ${scan.roll_number?.read||'unknown'}`} loading="lazy"/><small>Open full photo</small></a>}
       <div className="scan-review-fields">
         <label className="field">Student<select value={studentId} onChange={e=>setStudentId(e.target.value)} aria-invalid={!studentId}><option value="">Choose the student…</option>{roster.map(s=><option key={s.id} value={s.id}>{s.roll_no} · {s.display_name}</option>)}</select></label>
-        <div className="scan-answer-review">{scan.answers.map((a,i)=>{const q=assessment.questions.find(item=>item.id===a.question_id); const flagged=!a.final; return <div className={`scan-answer-row ${flagged?'flagged':''}`} key={a.question_id}>{a.crop_url&&<div className="scan-crop"><img src={mediaUrl(a.crop_url)} alt={`Answer area for question ${i+1}`}/></div>}<div className="scan-answer-info"><b>Q{i+1}. {q?.stem||'Question'}</b><span>{stateText[a.state]||a.state}{a.state==='single'?` ${a.detected}`:''}{a.note?` · ${a.note}`:''}</span><label className="field">Answer<select value={answers[a.question_id]} aria-invalid={!answers[a.question_id]} onChange={e=>setAnswers({...answers,[a.question_id]:e.target.value})}><option value="">Choose…</option>{['A','B','C','D','blank'].map(option=><option key={option} value={option}>{option==='blank'?'Blank (no answer)':`${option} · ${q?.options?.[option]||''}`}</option>)}</select></label></div></div>})}</div>
+        <div className="scan-answer-review">{scan.answers.map((a,i)=>{const q=assessment.questions.find(item=>item.id===a.question_id); const written=q?.type==='descriptive'||a.type==='descriptive'; const flagged=!a.final||a.text_state==='unclear'; return <div className={`scan-answer-row ${flagged?'flagged':''} ${written?'written-row':''}`} key={a.question_id}>{a.crop_url&&<div className="scan-crop"><img src={mediaUrl(a.crop_url)} alt={`${written?'Written answer':'Answer area'} for question ${i+1}`}/></div>}<div className="scan-answer-info"><b>Q{i+1}. {q?.stem||'Question'}</b>
+          {written?<><span>{textStateWord[a.text_state]||''}{a.note?` · ${a.note}`:''}</span><label className="field">Transcription (compare with the photo)<textarea rows="3" value={texts[a.question_id]} onChange={e=>setTexts({...texts,[a.question_id]:e.target.value})} aria-invalid={a.text_state==='unclear'} placeholder="Type what the student wrote"/></label><label className="field">Answer<select value={answers[a.question_id]} aria-invalid={!answers[a.question_id]} onChange={e=>setAnswers({...answers,[a.question_id]:e.target.value})}><option value="">Choose…</option><option value="answered">Answered (transcribed above)</option><option value="blank">Blank (no answer)</option></select></label></>
+          :<><span>{stateText[a.state]||a.state}{a.state==='single'?` ${a.detected}`:''}{a.note?` · ${a.note}`:''}</span><label className="field">Answer<select value={answers[a.question_id]} aria-invalid={!answers[a.question_id]} onChange={e=>setAnswers({...answers,[a.question_id]:e.target.value})}><option value="">Choose…</option>{['A','B','C','D','blank'].map(option=><option key={option} value={option}>{option==='blank'?'Blank (no answer)':`${option} · ${q?.options?.[option]||''}`}</option>)}</select></label>
+            <details className="reasoning-edit" open={a.text_state==='unclear'}><summary>Reasoning and notes {a.text_state?`· ${textStateWord[a.text_state]||''}`:''}</summary>{a.reasoning_crop_url&&<img src={mediaUrl(a.reasoning_crop_url)} alt={`Handwritten reasoning for question ${i+1}`}/>}<textarea rows="2" value={texts[a.question_id]} onChange={e=>setTexts({...texts,[a.question_id]:e.target.value})} placeholder="Type the student's reasoning, if any"/></details></>}
+        </div></div>})}</div>
       </div>
     </div>
-    <div className="scan-review-actions"><Button onClick={()=>act('confirm')} disabled={!!saving||!studentId||missing>0} aria-busy={saving==='confirm'} icon="check">{saving==='confirm'?'Confirming…':dup?'Replace confirmed paper':'Confirm paper'}</Button><Button variant="outline" onClick={()=>act('discard')} disabled={!!saving}>{saving==='discard'?'Discarding…':'Discard photo'}</Button>{(!studentId||missing>0)&&<small className="disabled-hint">{!studentId?'Choose the student first.':`Choose ${missing} flagged answer${missing===1?'':'s'}.`}</small>}</div>
+    <div className="scan-review-actions"><Button onClick={()=>act('confirm')} disabled={!!saving||!studentId||missing>0} aria-busy={saving==='confirm'} icon="check">{saving==='confirm'?'Confirming…':dup?'Replace confirmed paper':'Confirm paper'}</Button><Button variant="outline" onClick={()=>act('draft')} disabled={!!saving||dup}>{saving==='draft'?'Saving…':'Save changes'}</Button><Button variant="outline" onClick={()=>act('discard')} disabled={!!saving}>{saving==='discard'?'Discarding…':'Discard photo'}</Button>{(!studentId||missing>0)&&<small className="disabled-hint">{!studentId?'Choose the student first.':`Choose ${missing} flagged answer${missing===1?'':'s'}.`}</small>}</div>
   </Panel>;
 }
 

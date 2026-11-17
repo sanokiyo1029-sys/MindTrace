@@ -8,7 +8,7 @@ from app import config, serialize
 from app.db import get_db
 from app.errors import api_error
 from app.models import AuthToken, Student, Teacher
-from app.security import bearer, check_secret, issue_token
+from app.security import bearer, check_secret, current_session, issue_token
 from app.seed import TEACHER_EMAIL
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -95,3 +95,12 @@ def student_login(body: StudentLogin, db: Session = Depends(get_db)):
     if not s or not check_secret(body.pin.strip(), s.pin_hash):
         raise api_error(401, "bad_login", "Wrong student code or PIN.")
     return {"token": issue_token(db, "student", s.id), "student": serialize.student(s)}
+
+
+@router.get("/me")
+def me(session: AuthToken = Depends(current_session), db: Session = Depends(get_db)):
+    """Who this token belongs to, so the app can restore a session after a refresh and route by role."""
+    if session.role == "teacher":
+        t = db.get(Teacher, session.subject_id)
+        return {"role": "teacher", "teacher": {"id": t.id, "name": t.name, "email": t.email}}
+    return {"role": "student", "student": serialize.student(db.get(Student, session.subject_id))}

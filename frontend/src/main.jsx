@@ -9,5 +9,6 @@ import '@fontsource/comic-neue/latin-400-italic.css';
 import './styles.css';
 import './paper.css';
 import './experience.css';
+import './features.css';
 
 createRoot(document.getElementById('root')).render(<React.StrictMode><BrowserRouter><App /></BrowserRouter></React.StrictMode>);

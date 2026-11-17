@@ -32,10 +32,10 @@ def reading(roll, marks, qids, legibility="clear", warnings=(), code="", page=(1
             "page": {"number": page[0], "of": page[1]}, "answers": answers, "warnings": list(warnings)}
 
 
-def photo(page, marks, n=3, **kw):
+def photo(page, marks, n=3, types=None, **kw):
     """Fill the bubbles on a rendered page the way a student would, then 'photograph' it."""
     ink = [m.upper() if m not in ("?",) else "" for m in marks]
-    return synth.jpeg(synth.photograph(synth.fill(page, n, ink), **kw))
+    return synth.jpeg(synth.photograph(synth.fill(page, n, ink, types=types), **kw))
 
 
 def upload(client, H, aid, jpg, roll_number=None, replace=False):

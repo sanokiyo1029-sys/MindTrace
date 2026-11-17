@@ -17,6 +17,8 @@ def build(assessment: dict, questions: list[dict], scans: list[dict], printed: i
     q_stats = []
     per_mis = defaultdict(lambda: {"students": set(), "evidence": []})
     for q in questions:
+        if q.get("type") == "descriptive":  # written answers: teacher-reviewed feedback, not bubble counts
+            continue
         dist = {"A": 0, "B": 0, "C": 0, "D": 0, "blank": 0}
         chosen_by = defaultdict(set)
         for s in verified:
@@ -67,7 +69,7 @@ def build(assessment: dict, questions: list[dict], scans: list[dict], printed: i
         (c["teaching_action"] or {}).get("source") == "ai" or (c["followup_question"] or {}).get("source") == "ai"
         for c in cards)
 
-    caveats = ["Handwriting not analysed (OCR disabled)"]
+    caveats = ["Handwritten reasoning and written answers aren't counted here; review them under Student feedback."]
     missing = max(printed - total, 0)
     if missing:
         caveats.append(f"{missing} printed paper(s) not scanned yet")

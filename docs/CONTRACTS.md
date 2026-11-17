@@ -229,3 +229,37 @@ followup_questions(misconception_ids: list[str], n: int) -> list[dict]          
 ```
 - `AI_MODE=live` calls the LLM. `AI_MODE=fixtures` returns `tests/fixtures/*.json` with no network. **Fixtures mode must always work** (demo backup).
 - Aggregating counts into misconceptions is plain Python in the backend (`insights.py`), not AI.
+
+---
+
+## Additions (Nov 2026, backwards compatible)
+
+Everything above still holds. Older MCQ-only assessments and scans need no change: a missing `type` means `"mcq"`.
+
+**Subjects and written answers**
+- `POST /assessments/generate` also takes `subject` (`mathematics` default, `physics`, `chemistry`, `biology`, `engineering`, `technology`; anything else → 400 `bad_subject`), `difficulty` (`easy|medium|hard`, optional) and `num_descriptive` (0–2, counted inside `num_questions`). Assessments return `subject` and `plan`.
+- Question `type`: `mcq` | `descriptive`. A descriptive question has `stem`, `concept`, optional `model_answer` (teacher-only notes) and `look_for` (misconception ids); no `options`/`answer`. Questions carry `version` (bumped on each edit).
+- `POST /assessments/{id}/questions` → teacher adds a question (default `descriptive`); max 5 per paper. Returns `Assessment`.
+- `PATCH /questions/{id}` accepts optional `base_version`; stale → 409 `conflict` with `current` (the server copy). Assigned practice can't be edited (409 `already_assigned`).
+- Sheet layout: a descriptive block is 1.6× taller, has no bubbles and one lined answer box (`layout.question_blocks(n, types)`). Still one A4 page per paper.
+
+**Scans**
+- Each answer also has `text` (transcribed reasoning/notes, or the written answer) and `text_state`: `clear` | `unclear` | `missing` | `not_read` (no AI) | `teacher` (corrected by the teacher). Written answers have `type: "descriptive"`; their `final` is `answered` | `blank`, pre-filled only when the handwriting was read clearly. New warning `handwriting_unclear`.
+- ScanResult has `version`. Review answers may omit `final` (keep it) and may include `text`; the body may include `base_version` (stale → 409 `conflict` with `current`). `confirmed: false` saves a draft.
+- `/api/media/scans/...` now needs a token (header or `?token=`): the owning teacher, or the student whose paper it is once released.
+
+**Feedback, plan, practice (teacher)**
+- `GET /assessments/{id}/feedback` → `{items, ai_available}`: one item per written answer and per wrong bubble answer on confirmed papers, with the response, a `suggestion` (`state`: `ok` | `not_requested` | `unavailable` | `too_unclear`; `source`: `ai` | `library`), `text`, `concept`, `video_url`, `status` (`pending` | `approved` | `dismissed`), `version`.
+- `POST /assessments/{id}/feedback/suggest` → asks the AI for readable written answers only; failures are recorded per item.
+- `PATCH /feedback/{id}` `{text?, concept?, video_url?, status?, base_version?}`. Approving needs text.
+- `PUT /assessments/{id}/plan/{misconception_id}` `{title, minutes, steps, video_url, status: planned|dismissed, note}` → the assessment's `plan`.
+- `POST /assessments/{id}/assign` (approved only) and `GET /assessments/{id}/practice` → submission status per student.
+- `GET /classes/{id}/overview?subject=` → `{class, subject, student_count, assessment_count, topics, needs_review, concept_coverage, history}`.
+- `GET /students/{id}/report` → one student's papers (teacher of that class only; others 404).
+
+**Student**
+- `GET /student/me/results` items add `status` (`released` | `awaiting_review`), `topic`, `subject`, `created_at`, and when released: `score {correct, total}` (bubble questions only), `scan_url`, `feedback` (approved only: `{question_id, concept, text, video_url}`). Released = paper confirmed **and** assessment confirmed.
+- `GET /student/me/practice`, `POST /student/me/practice/{assignment_id}` `{answers: [{question_id, choice?|text?}]}`: once per student; a repeat returns the first submission with `already_submitted: true`. No answer key before submitting.
+
+**Auth**
+- `GET /auth/me` → `{role, teacher}` or `{role, student}`. Sessions expire after `SESSION_HOURS` (default 168) → 401 `session_expired`.

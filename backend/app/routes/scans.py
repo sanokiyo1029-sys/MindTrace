@@ -17,7 +17,7 @@ from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
-from app.layout import paper_code
+from app.layout import paper_code, question_types
 from app.models import Assessment, ClassRoom, Scan, Sheet, Student, Teacher
 from app.routes.common import current_scans, own_assessment, sheets_of
 from app.scanner import gemini_reader, omr, pipeline
@@ -122,6 +122,7 @@ def upload_scan(assessment_id: str, image: UploadFile = File(...), roll_number: 
     cls = db.get(ClassRoom, a.class_id)
     qs = serialize.questions_of(db, a.id)
     qids = [q.id for q in qs]
+    qtypes = question_types([q.data for q in qs])
     scan_id = new_id("sc")
     page, quality = pipeline.locate(img)  # straightened page, or why not
     shown = page if page is not None else img
@@ -132,15 +133,15 @@ def upload_scan(assessment_id: str, image: UploadFile = File(...), roll_number: 
             "too_blurry": "The photo is blurry. Check it carefully, or retake it holding the phone steady.",
         }.get(quality, "The four corner squares weren't all found. Check the photo, or retake it with the whole "
                        "page in view.")})
-    bubble = pipeline.read_answers(page, len(qs)) if page is not None else None
-    crops = omr.crops(page, len(qs)) if page is not None else None
+    bubble = pipeline.read_answers(page, len(qs), qtypes) if page is not None else None
+    crops = omr.crops(page, len(qs), qtypes) if page is not None else None
 
     # 1. read the paper: Gemini first; the bubble reader cross-checks it and covers for it when it's unavailable
     read, extracted_by, roll_text = None, None, None
     if gemini.enabled():
         try:
             read = gemini_reader.extract(_jpeg(shown), title=a.title, class_name=cls.name,
-                                         paper_code=paper_code(a.id), question_ids=qids)
+                                         paper_code=paper_code(a.id), question_ids=qids, types=qtypes)
             extracted_by, roll_text = "gemini", read["roll_number"]
             warnings += read["warnings"]
         except gemini.GeminiError as exc:
@@ -150,10 +151,17 @@ def upload_scan(assessment_id: str, image: UploadFile = File(...), roll_number: 
         warnings.append({"code": "ai_off", "message": "Gemini isn't set up, so enter the roll number from the photo "
                                                      "and check every answer."})
     answers = []
-    for i, qid in enumerate(qids):
+    for i, (qid, qtype) in enumerate(zip(qids, qtypes)):
         g = read["answers"][i] if read else None
         b = bubble[i] if bubble else None
-        if g is None and b is None:
+        if qtype == "descriptive":  # handwriting only: Gemini transcribes it, or the teacher types it from the photo
+            ans = {k: g[k] for k in ("question_id", "detected", "state", "note", "text", "text_state")} if g else {
+                "question_id": qid, "detected": None, "state": "unreadable", "text": "", "text_state": "not_read",
+                "note": "Type the answer from the photo (handwriting wasn't read automatically)."}
+            ans["type"] = "descriptive"
+            ans["final"] = {"single": "answered", "blank": "blank"}.get(ans["state"])
+            extracted_by = extracted_by or "manual"
+        elif g is None and b is None:
             ans = {"question_id": qid, "detected": None, "state": "unreadable", "note": "Enter this answer from the photo."}
             extracted_by = extracted_by or "manual"
         elif g is None:
@@ -168,7 +176,10 @@ def upload_scan(assessment_id: str, image: UploadFile = File(...), roll_number: 
                 ans.update(state="ambiguous", detected=None,
                            note=f"Gemini read {g['detected'] or said[g['state']]}, the bubble reader read "
                                 f"{b['detected'] or said[b['state']]}. Check the photo.")
-        ans["final"] = ans["detected"] if ans["state"] == "single" else ("blank" if ans["state"] == "blank" else None)
+        if qtype != "descriptive":
+            ans["final"] = ans["detected"] if ans["state"] == "single" else ("blank" if ans["state"] == "blank" else None)
+            ans.setdefault("text", g.get("text", "") if g else "")
+            ans.setdefault("text_state", g.get("text_state", "missing") if g else "not_read")
         ans["confidence"] = None  # model self-reports aren't calibrated; the teacher confirms instead
         if crops:
             ans["crop_url"] = _save(crops[i][0], f"{scan_id}_q{i + 1}.jpg")
@@ -176,6 +187,9 @@ def upload_scan(assessment_id: str, image: UploadFile = File(...), roll_number: 
         answers.append(ans)
     if any(x["state"] in ("multiple", "ambiguous", "unreadable") for x in answers) and extracted_by == "gemini":
         warnings.append({"code": "answers_unclear", "message": "Some answers are unclear. Choose them from the photo."})
+    if any(x["text_state"] == "unclear" for x in answers):
+        warnings.append({"code": "handwriting_unclear", "message": "Some handwriting couldn't be read with confidence. "
+                                                                   "Compare the transcription with the photo and correct it."})
 
     # 2. who is it? the teacher's typed roll number wins; matching only looks at this assessment's class
     if roll_number and roll_number.strip():
@@ -221,7 +235,8 @@ def scan_progress(assessment_id: str, teacher: Teacher = Depends(current_teacher
 
 class ReviewAnswer(BaseModel):
     question_id: str
-    final: str
+    final: str | None = None  # A-D | blank for bubbles; answered | blank for written answers; None = keep
+    text: str | None = None   # teacher's corrected transcription (reasoning, notes or the written answer)
 
 
 class ReviewBody(BaseModel):
@@ -231,6 +246,7 @@ class ReviewBody(BaseModel):
     roll_number: str | None = None  # ...or types the roll number from the photo
     replace: bool = False           # use this paper even though the student already has a confirmed one
     discard: bool = False           # not a paper of this assessment: take it out of the queue
+    base_version: int | None = None  # the scan version this edit started from (offline edits); stale -> 409 conflict
 
 
 @router.patch("/scans/{scan_id}/review")
@@ -239,6 +255,9 @@ def review(scan_id: str, body: ReviewBody, teacher: Teacher = Depends(current_te
     if not sc:
         raise api_error(404, "not_found", "Scan not found.")
     a = own_assessment(db, teacher, sc.assessment_id)
+    if body.base_version is not None and body.base_version != (sc.version or 1):
+        raise api_error(409, "conflict", "This paper was changed somewhere else since you edited it. Check the newer "
+                                         "version, then apply your change again.", current=serialize.scan(db, sc))
     if body.discard:
         sc.status, sc.reject_reason, sc.is_current = "rejected", "discarded_by_teacher", False
         db.commit()
@@ -274,16 +293,32 @@ def review(scan_id: str, body: ReviewBody, teacher: Teacher = Depends(current_te
                                                           "Choose Replace to use this photo instead.")
             sc.warnings = [w for w in (sc.warnings or []) if not w["code"].startswith("roll_") and w["code"] != "already_confirmed"]
 
-        fixes = {x.question_id: x.final.strip().upper() if x.final.lower() != "blank" else "blank" for x in body.answers}
-        if any(v not in ("A", "B", "C", "D", "blank") for v in fixes.values()):
-            raise api_error(400, "bad_answer", "Answers must be A, B, C, D or blank.")
+        kinds = dict(zip([q.id for q in serialize.questions_of(db, a.id)],
+                         question_types([q.data for q in serialize.questions_of(db, a.id)])))
+        fixes, texts = {}, {}
+        for x in body.answers:
+            if x.text is not None:
+                texts[x.question_id] = x.text.strip()[:4000]
+            if x.final is None:
+                continue
+            v = x.final.strip().lower()
+            v = v if v in ("blank", "answered") else v.upper()
+            ok = ("answered", "blank") if kinds.get(x.question_id) == "descriptive" else ("A", "B", "C", "D", "blank")
+            if v not in ok:
+                raise api_error(400, "bad_answer", "Answers must be A, B, C, D or blank (written answers: answered or blank).")
+            fixes[x.question_id] = v
         answers = []
         for x in sc.answers:
             x = dict(x)
             if x["question_id"] in fixes:
                 x["final"], x["reviewed"] = fixes[x["question_id"]], True
+            if x["question_id"] in texts:
+                x["text"], x["text_state"], x["reviewed"] = texts[x["question_id"]], "teacher", True
+                if x.get("type") == "descriptive":
+                    x["note"] = ""  # the teacher's transcription replaces the reader's note
             answers.append(x)
         sc.answers = answers
+        sc.version = (sc.version or 1) + 1
         if body.confirmed:
             if not sc.sheet_id or not sc.is_current:
                 raise api_error(400, "no_student", "Choose the student (or enter the roll number) before confirming.")

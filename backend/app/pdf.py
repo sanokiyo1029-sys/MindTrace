@@ -9,7 +9,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
-from app.layout import base, paper_code, question_blocks
+from app.layout import base, paper_code, question_blocks, question_types
 
 PAGE_H = A4[1]
 GREY = HexColor("#555555")
@@ -20,7 +20,7 @@ def _y(mm_from_top: float) -> float:
     return PAGE_H - mm_from_top * mm
 
 
-OPTION_W = 33 * mm
+OPTION_W = 28 * mm  # leaves a gap before the next option's letter
 
 
 def _fit_option(text: str) -> tuple[float, float, int]:
@@ -75,19 +75,24 @@ def _draw_sheet(c: canvas.Canvas, *, assessment: dict, questions: list[dict], pa
     c.setFillColor(GREY)
     c.setFont("Helvetica-Oblique", 9)
     c.drawString(25 * mm, _y(ty + 5.5),
-                 f"MindTrace · {date.today():%d %b %Y} · Write your roll number above. Fill ONE bubble per question "
-                 "with a dark pen, then explain why.")
+                 f"MindTrace · {date.today():%d %b %Y} · " + (
+                     "Roll number above. ONE dark bubble per question, explain why; long answers in their box."
+                     if "descriptive" in question_types(questions) else
+                     "Write your roll number above. Fill ONE bubble per question with a dark pen, then explain why."))
     c.setFillColor(black)
     c.setLineWidth(0.6)
     c.line(20 * mm, _y(L["rule_y_mm"]), 190 * mm, _y(L["rule_y_mm"]))
 
     r = L["bubble_radius_mm"]
-    for qd, block in zip(questions, question_blocks(len(questions))):
+    for qd, block in zip(questions, question_blocks(len(questions), question_types(questions))):
         sx, sy = block["stem_xy"]
         c.setFont("Helvetica-Bold", 12)
         lines = simpleSplit(f"Q{block['index'] + 1}. {qd['stem']}", "Helvetica-Bold", 12, 170 * mm)
         for k, line in enumerate(lines[:2]):
             c.drawString(sx * mm, _y(sy + 1 + k * 5.2), line)
+        if block["type"] == "descriptive":
+            _answer_box(c, block["why_box"])
+            continue
         for opt, (bx, by) in block["bubbles"].items():
             c.setFont("Helvetica-Bold", 11)
             c.drawCentredString((bx + L["letter_offset_mm"]) * mm, _y(by + 1.5), opt)
@@ -105,8 +110,27 @@ def _draw_sheet(c: canvas.Canvas, *, assessment: dict, questions: list[dict], pa
         c.setStrokeColor(black)
         c.setFillColor(GREY)
         c.setFont("Helvetica-Oblique", 9)
-        c.drawString((x0 + 2) * mm, _y(y0 + 4), "Why did you choose this answer?")
+        c.drawString((x0 + 2) * mm, _y(y0 + 4), "Why did you choose this answer? (working and notes)")
         c.setFillColor(black)
+
+
+def _answer_box(c: canvas.Canvas, box):
+    """Written-answer box with faint ruled lines (kept light so they don't look like ink to the reader)."""
+    x0, y0, x1, y1 = box
+    c.setLineWidth(0.8)
+    c.setStrokeColor(GREY)
+    c.rect(x0 * mm, _y(y1), (x1 - x0) * mm, (y1 - y0) * mm, stroke=1, fill=0)
+    c.setStrokeColor(HexColor("#C8C8C8"))
+    c.setLineWidth(0.3)
+    y = y0 + 15
+    while y < y1 - 3:
+        c.line((x0 + 3) * mm, _y(y), (x1 - 3) * mm, _y(y))
+        y += 8
+    c.setStrokeColor(black)
+    c.setFillColor(GREY)
+    c.setFont("Helvetica-Oblique", 9)
+    c.drawString((x0 + 2) * mm, _y(y0 + 4), "Write your answer here. Show your working and any notes.")
+    c.setFillColor(black)
 
 
 def build_pdf(*, assessment: dict, questions: list[dict], copies: int) -> bytes:

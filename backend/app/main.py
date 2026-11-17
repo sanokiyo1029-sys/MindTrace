@@ -6,10 +6,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from app import ai_bridge, config
-from app.routes import assessments, auth, classes, insights_route, scans, student
+from app.routes import assessments, auth, classes, insights_route, media, scans, student, teaching
 from app.seed import seed
 
 logging.basicConfig(level=logging.INFO)
@@ -53,10 +52,10 @@ def health():
             "ai_provider": ai_bridge.provider()}  # app.ai | gemini | samples (the key itself never leaves the server)
 
 
-for r in (auth.router, classes.router, assessments.router, scans.router, insights_route.router, student.router):
+for r in (auth.router, classes.router, classes.student_router, assessments.router, scans.router, insights_route.router,
+          student.router, teaching.router, media.router):
     app.include_router(r)
 
-app.mount("/api/media", StaticFiles(directory=config.MEDIA_DIR), name="media")
 
 
 # The website (frontend/dist, from `npm run build`) is served here too, so one address, or one Cloudflare

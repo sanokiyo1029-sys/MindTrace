@@ -18,13 +18,13 @@ def render_pages(pdf_bytes: bytes, dpi: int = 150) -> list[np.ndarray]:
     return pages
 
 
-def fill(page: np.ndarray, n_questions: int, marks: list, ink=(60, 40, 30), strength=1.0) -> np.ndarray:
+def fill(page: np.ndarray, n_questions: int, marks: list, ink=(60, 40, 30), strength=1.0, types=None) -> np.ndarray:
     """marks[i] = 'A' | 'AB' (double) | '' (blank) | 'a' (faint/half mark)."""
     img = page.copy()
     h, w = img.shape[:2]
     kx, ky = w / base()["page_mm"][0], h / base()["page_mm"][1]
     r = base()["bubble_radius_mm"]
-    for block, m in zip(question_blocks(n_questions), marks):
+    for block, m in zip(question_blocks(n_questions, types), marks):
         for ch in m:
             bx, by = block["bubbles"][ch.upper()]
             centre = (int(bx * kx), int(by * ky))

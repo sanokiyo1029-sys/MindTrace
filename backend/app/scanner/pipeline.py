@@ -68,9 +68,13 @@ def locate(img: np.ndarray) -> tuple[np.ndarray | None, str | None]:
     return upright(align.warp_page(img, quad)), None
 
 
-def read_answers(page: np.ndarray, n_questions: int) -> list[dict]:
+def read_answers(page: np.ndarray, n_questions: int, types: list[str] | None = None) -> list[dict | None]:
+    """Bubble state per question; None for written-answer questions (only Gemini or the teacher can read those)."""
     out = []
-    for fills in omr.bubble_fills(page, n_questions):
+    for fills in omr.bubble_fills(page, n_questions, types):
+        if fills is None:
+            out.append(None)
+            continue
         res = omr.classify(fills)
         res["fill"] = fills
         out.append(res)
