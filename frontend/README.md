@@ -9,7 +9,7 @@ npm ci
 npm run dev
 ```
 
-The development server runs at `http://localhost:5173`. It proxies `/api/*` to `http://localhost:8000/*`, removing the `/api` prefix to match the shared contract.
+The development server runs at `http://localhost:5173`. It proxies `/api/*` to `http://localhost:8000/api/*`, preserving the shared contract's `/api` prefix.
 
 ## Modes and configuration
 

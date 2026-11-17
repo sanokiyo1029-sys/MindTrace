@@ -12,7 +12,9 @@ async function request(path, options = {}) {
   const type = response.headers.get('content-type') || '';
   if (!response.ok) {
     const body = type.includes('json') ? await response.json() : null;
-    throw new Error(body?.message || `Request failed (${response.status}). Check the connection and try again.`);
+    const error = new Error(body?.message || `Request failed (${response.status}). Check the connection and try again.`);
+    error.validationErrors = body?.questions;
+    throw error;
   }
   return type.includes('application/pdf') ? response.blob() : response.json();
 }
