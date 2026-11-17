@@ -11,6 +11,8 @@ npm run dev
 
 The development server runs at `http://localhost:5173`. It proxies `/api/*` to `http://localhost:8000/api/*`, preserving the shared contract's `/api` prefix. Start the backend first (`start-backend.bat` at the repo root).
 
+**The backend also serves the built website** at `http://localhost:8000` (run `npm run build` after frontend changes; `start-backend.bat` builds it once if missing). So one address, or one tunnel (`cloudflared tunnel --url http://localhost:8000`), is the whole app: open it, sign in, land on the dashboard.
+
 ## Modes and configuration
 
 Vite reads the **repo-root `.env`** (`envDir: '..'`, see `docs/INTEGRATION.md`).
@@ -18,7 +20,9 @@ Vite reads the **repo-root `.env`** (`envDir: '..'`, see `docs/INTEGRATION.md`).
 - **Live mode is the default.** Every screen calls the backend.
 - `VITE_MOCK=true` turns on mock mode: the labelled fictional fixture in `src/fixtures/demo.json`. A "Mock mode · sample data, not live" tag shows on every screen. It does not fake sheet PDFs, scan results or student sign-in.
 - `VITE_API_URL` defaults to `/api`.
-- **Server address** (on the sign-in screens): where the backend lives, saved on the device. Leave it empty on the website. In the Android app, paste the backend's https tunnel address, e.g. `https://xxxx.trycloudflare.com`.
+- **Server address** (Android app only): where the backend lives, saved on the device, e.g. `https://xxxx.trycloudflare.com`. The website always uses the server it was loaded from.
+- **Gemini** runs on the server (see the root `.env`: `AI_MODE=live`, `LLM_API_KEY`). The New assessment screen says whether Gemini or the labelled saved samples are in use; questions and activities are tagged "AI draft" or "Saved sample", and fallback notes show as a banner.
+- **Continue with Google** appears on the sign-in screen when the server has `GOOGLE_CLIENT_ID` (not inside the Android app).
 - The teacher token, the open assessment and the server address are kept in `localStorage`, so a refresh keeps you signed in. A `401` signs you out.
 - Camera access needs localhost or HTTPS. Image processing happens in the backend.
 
