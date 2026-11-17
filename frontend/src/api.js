@@ -13,7 +13,9 @@ export const isNative = Boolean(window.Capacitor?.isNativePlatform?.());
 
 // Only the Android app needs a server address. The website always talks to the server it was loaded from,
 // so there is never a separate Cloudflare URL to copy (and an old saved address can't break sign-in).
-export const getServer = () => isNative ? store.get('mt_server') : '';
+// VITE_SERVER_URL (optional, set when building the APK) is the app's default; the Server address field overrides it.
+const DEFAULT_SERVER = (import.meta.env.VITE_SERVER_URL || '').replace(/\/+$/, '');
+export const getServer = () => isNative ? (store.get('mt_server') || DEFAULT_SERVER) : '';
 export const setServer = (url) => store.set('mt_server', url.trim().replace(/\/+$/, '').replace(/\/api$/, ''));
 const apiBase = () => getServer() ? `${getServer()}/api` : (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 // The sheet PDF is opened directly by the browser (or the phone's browser), so it authenticates with ?token= (CONTRACTS).
