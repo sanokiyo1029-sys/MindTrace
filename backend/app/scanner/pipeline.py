@@ -1,21 +1,16 @@
-"""Photo -> flattened page -> sheet id -> bubble states. Pure image work, no database."""
-from __future__ import annotations
+"""Photo -> upright, flattened page -> bubble states. Pure image work, no database.
 
-from dataclasses import dataclass, field
+Identity no longer comes from the image here (no QR): Gemini reads the handwritten roll number and the roster
+match happens in the scan route. This module keeps the deterministic bubble reader, used to cross-check Gemini
+and as the fallback when Gemini is unavailable.
+"""
+from __future__ import annotations
 
 import cv2
 import numpy as np
 
-from app.scanner import align, omr, qr
-
-
-@dataclass
-class PageRead:
-    ok: bool
-    reject_reason: str | None = None
-    sheet_id: str | None = None
-    page: np.ndarray | None = None
-    answers: list[dict] = field(default_factory=list)
+from app.layout import base
+from app.scanner import align, omr
 
 
 def decode_image(data: bytes) -> np.ndarray | None:
@@ -36,8 +31,29 @@ def decode_image(data: bytes) -> np.ndarray | None:
     return img
 
 
-def locate(img: np.ndarray) -> tuple[np.ndarray | None, str | None, str | None]:
-    """Returns (flat page, sheet_id, reject_reason)."""
+def _roll_box_ink(page: np.ndarray) -> float:
+    """How dark the printed roll-number box borders are where they should be on an upright page."""
+    L, k = base(), base()["px_per_mm"]
+    rb = L["roll_box"]
+    gray = page.min(axis=2) if page.ndim == 3 else page
+    y0, y1 = int((rb["y"] + 2) * k), int((rb["y"] + rb["h"] - 2) * k)
+    vals = []
+    for i in range(rb["count"] + 1):
+        x = int((rb["x"] + i * rb["w"]) * k)
+        strip = gray[y0:y1, max(x - 4, 0):x + 5]
+        if strip.size:
+            vals.append(float(255 - strip.min(axis=1).mean()) / 255)
+    return float(np.mean(vals)) if vals else 0.0
+
+
+def upright(page: np.ndarray) -> np.ndarray:
+    """The four corner markers look the same both ways up; the thick roll-number boxes at the top don't."""
+    flipped = cv2.rotate(page, cv2.ROTATE_180)
+    return flipped if _roll_box_ink(flipped) > max(_roll_box_ink(page) * 1.5, 0.25) else page
+
+
+def locate(img: np.ndarray) -> tuple[np.ndarray | None, str | None]:
+    """Returns (flat upright page, None) or (None, reason: too_dark | too_blurry | page_not_found)."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     quad = align.find_page(gray)
     if quad is None:  # sideways photo? try both quarter turns
@@ -48,27 +64,17 @@ def locate(img: np.ndarray) -> tuple[np.ndarray | None, str | None, str | None]:
                 img = r_img
                 break
     if quad is None:
-        sid, _ = qr.read_anywhere(img)
-        return None, sid, align.quality_reason(gray)
-    page = align.warp_page(img, quad)
-    sid = qr.read_qr_box(page)
-    if sid is None:  # photographed upside down? the QR would be bottom-left
-        flipped = cv2.rotate(page, cv2.ROTATE_180)
-        sid = qr.read_qr_box(flipped)
-        if sid:
-            page = flipped
-    if sid is None:  # QR found somewhere else on the page: use its position to fix orientation
-        sid, centre = qr.read_anywhere(page)
-        if sid and centre and centre[1] > 0.5:
-            page = cv2.rotate(page, cv2.ROTATE_180)
-    if sid is None:
-        sid, _ = qr.read_anywhere(img)
-    return page, sid, None
+        return None, align.quality_reason(gray)
+    return upright(align.warp_page(img, quad)), None
 
 
-def read_answers(page: np.ndarray, n_questions: int) -> list[dict]:
+def read_answers(page: np.ndarray, n_questions: int, types: list[str] | None = None) -> list[dict | None]:
+    """Bubble state per question; None for written-answer questions (only Gemini or the teacher can read those)."""
     out = []
-    for fills in omr.bubble_fills(page, n_questions):
+    for fills in omr.bubble_fills(page, n_questions, types):
+        if fills is None:
+            out.append(None)
+            continue
         res = omr.classify(fills)
         res["fill"] = fills
         out.append(res)

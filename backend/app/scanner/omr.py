@@ -13,7 +13,8 @@ def _ink(page_bgr: np.ndarray) -> np.ndarray:
     return page_bgr.min(axis=2) if page_bgr.ndim == 3 else page_bgr
 
 
-def bubble_fills(page_bgr: np.ndarray, n_questions: int) -> list[dict[str, float]]:
+def bubble_fills(page_bgr: np.ndarray, n_questions: int, types: list[str] | None = None) -> list[dict[str, float] | None]:
+    """Fill ratio per bubble for each question; None for written-answer (descriptive) questions."""
     L = base()
     k = L["px_per_mm"]
     r = L["bubble_radius_mm"] * k
@@ -23,7 +24,10 @@ def bubble_fills(page_bgr: np.ndarray, n_questions: int) -> list[dict[str, float
     disc = (xx ** 2 + yy ** 2) <= inner ** 2
     win = int(r * 1.35)
     out = []
-    for block in question_blocks(n_questions):
+    for block in question_blocks(n_questions, types):
+        if not block["bubbles"]:
+            out.append(None)
+            continue
         fills = {}
         for opt, (bx, by) in block["bubbles"].items():
             cx, cy = int(bx * k), int(by * k)
@@ -58,14 +62,19 @@ def classify(fills: dict[str, float]) -> dict:
     return {"state": "single", "detected": top_opt, "confidence": round(conf, 2)}
 
 
-def crops(page_bgr: np.ndarray, n_questions: int) -> list[tuple[np.ndarray, np.ndarray]]:
-    """(bubble row, reasoning box) image crops per question, kept as evidence."""
+def crops(page_bgr: np.ndarray, n_questions: int, types: list[str] | None = None) -> list[tuple[np.ndarray, np.ndarray]]:
+    """(bubble row, reasoning box) image crops per question, kept as evidence. For a written-answer question both
+    are the whole question block (stem + handwriting), so the teacher can compare it with the transcription."""
     k = base()["px_per_mm"]
     out = []
-    for block in question_blocks(n_questions):
-        by = list(block["bubbles"].values())[0][1]
-        row = page_bgr[int((by - 7) * k):int((by + 7) * k), int(14 * k):int(196 * k)]
+    for block in question_blocks(n_questions, types):
         x0, y0, x1, y1 = block["why_box"]
         why = page_bgr[int(y0 * k):int(y1 * k), int(x0 * k):int(x1 * k)]
+        if not block["bubbles"]:
+            whole = page_bgr[int(block["y0"] * k):int(y1 * k), int(14 * k):int(196 * k)]
+            out.append((whole, whole))
+            continue
+        by = list(block["bubbles"].values())[0][1]
+        row = page_bgr[int((by - 7) * k):int((by + 7) * k), int(14 * k):int(196 * k)]
         out.append((row, why))
     return out

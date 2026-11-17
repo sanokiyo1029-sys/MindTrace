@@ -1,0 +1,220 @@
+{
+  "mode": "fixture",
+  "assessment": {
+    "id": "as_demo_fractions",
+    "class_id": "cl_7a",
+    "title": "Fractions check 1",
+    "topic": "fractions",
+    "concepts_text": "Adding fractions with equal denominators; numerators and denominators; simplifying fractions.",
+    "status": "confirmed",
+    "parent_assessment_id": null,
+    "questions": [
+      {
+        "id": "q_001",
+        "assessment_id": "as_demo_fractions",
+        "topic": "fractions",
+        "concept": "adding fractions with equal denominators",
+        "stem": "What is 1/3 + 1/3?",
+        "options": {
+          "A": "2/6",
+          "B": "2/3",
+          "C": "1/6",
+          "D": "1/3"
+        },
+        "answer": "B",
+        "explanation": "Keep the denominator the same and add the numerators: 1/3 + 1/3 = 2/3.",
+        "distractors": {
+          "A": {
+            "misconception_id": "M_ADD_DENOMS",
+            "why": "Added the top and bottom numbers"
+          },
+          "C": {
+            "misconception_id": "M_MULTIPLY_INSTEAD",
+            "why": "Multiplied the fractions"
+          },
+          "D": {
+            "misconception_id": "M_IGNORE_SECOND",
+            "why": "Ignored the second fraction"
+          }
+        },
+        "difficulty": "easy",
+        "status": "approved",
+        "source": "sample"
+      },
+      {
+        "id": "q_002",
+        "assessment_id": "as_demo_fractions",
+        "topic": "fractions",
+        "concept": "comparing fractions",
+        "stem": "Which fraction is greater: 3/8 or 5/8?",
+        "options": {
+          "A": "3/8",
+          "B": "They are equal",
+          "C": "5/8",
+          "D": "Not enough information"
+        },
+        "answer": "C",
+        "explanation": "With equal denominators, compare the numerators. Five eighths is greater than three eighths.",
+        "distractors": {},
+        "difficulty": "easy",
+        "status": "approved",
+        "source": "sample"
+      },
+      {
+        "id": "q_003",
+        "assessment_id": "as_demo_fractions",
+        "topic": "fractions",
+        "concept": "simplifying fractions",
+        "stem": "Which fraction is equivalent to 2/4?",
+        "options": {
+          "A": "1/4",
+          "B": "1/2",
+          "C": "2/8",
+          "D": "4/2"
+        },
+        "answer": "B",
+        "explanation": "Divide the numerator and denominator by two: 2/4 = 1/2.",
+        "distractors": {},
+        "difficulty": "easy",
+        "status": "approved",
+        "source": "sample"
+      }
+    ]
+  },
+  "roster": [
+    "Aarav",
+    "Diya",
+    "Kabir",
+    "Meera",
+    "Rohan"
+  ],
+  "scans": {
+    "total": 5,
+    "accepted": 5,
+    "needs_review": 0,
+    "remaining": 0,
+    "scans": []
+  },
+  "insights": {
+    "assessment_id": "as_demo_fractions",
+    "papers": {
+      "printed": 5,
+      "verified": 5,
+      "needs_review": 0,
+      "missing": 0
+    },
+    "questions": [
+      {
+        "question_id": "q_001",
+        "correct": 2,
+        "total": 5,
+        "distribution": {
+          "A": 3,
+          "B": 2,
+          "C": 0,
+          "D": 0,
+          "blank": 0
+        }
+      },
+      {
+        "question_id": "q_002",
+        "correct": 4,
+        "total": 5,
+        "distribution": {
+          "A": 1,
+          "B": 0,
+          "C": 4,
+          "D": 0,
+          "blank": 0
+        }
+      },
+      {
+        "question_id": "q_003",
+        "correct": 3,
+        "total": 5,
+        "distribution": {
+          "A": 0,
+          "B": 3,
+          "C": 1,
+          "D": 1,
+          "blank": 0
+        }
+      }
+    ],
+    "misconceptions": [
+      {
+        "misconception_id": "M_ADD_DENOMS",
+        "label": "Adds denominators as well as numerators",
+        "status": "possible",
+        "students_affected": 3,
+        "evidence": [
+          {
+            "question_id": "q_001",
+            "option": "A",
+            "count": 3
+          }
+        ],
+        "why_we_think_so": "3 of 5 students chose 2/6 for 1/3 + 1/3, which matches adding both top and bottom numbers.",
+        "uncertainty": "A wrong option is evidence of an incorrect answer, not proof of the reasoning. Some may be guesses.",
+        "teaching_action": {
+          "title": "Fraction strips: same-size pieces",
+          "minutes": 5,
+          "steps": [
+            "Show 1/3 + 1/3 with two strips",
+            "Ask: did the pieces get smaller?",
+            "Write 2/3 and compare with 2/6"
+          ]
+        },
+        "followup_question": {
+          "stem": "What is 2/5 + 1/5?",
+          "answer": "3/5"
+        }
+      }
+    ],
+    "caveats": [
+      "Sample fixture data for demonstration; not a live scan.",
+      "Handwriting not analysed (OCR disabled)."
+    ],
+    "generated_by": "fixture"
+  },
+  "question_bank": [
+    {
+      "id": "q_004",
+      "assessment_id": "as_demo_fractions",
+      "topic": "fractions",
+      "concept": "equivalent fractions",
+      "stem": "What is 1/2 written in sixths?",
+      "options": {
+        "A": "1/6",
+        "B": "2/6",
+        "C": "3/6",
+        "D": "6/2"
+      },
+      "answer": "C",
+      "explanation": "Multiply the numerator and denominator by three: 1/2 = 3/6.",
+      "distractors": {},
+      "difficulty": "easy",
+      "status": "approved",
+      "source": "sample"
+    },
+    {
+      "id": "q_005",
+      "assessment_id": "as_demo_fractions",
+      "topic": "fractions",
+      "concept": "adding fractions with equal denominators",
+      "stem": "What is 1/4 + 2/4?",
+      "options": {
+        "A": "3/4",
+        "B": "3/8",
+        "C": "2/4",
+        "D": "1/8"
+      },
+      "answer": "A",
+      "explanation": "Keep the denominator and add the numerators: 1/4 + 2/4 = 3/4.",
+      "distractors": {},
+      "difficulty": "easy",
+      "status": "approved",
+      "source": "sample"
+    }
+  ]
+}

@@ -9,7 +9,7 @@ Three people build three parts in parallel. They only fit together at the end if
  ┌──────────────────────┐   /api/*   ┌──────────────────────────────┐  import  ┌──────────────────────┐
  │ frontend/  (Risheeth)│ ─────────▶ │ backend/  (Rohan)            │ ───────▶ │ backend/app/ai/      │
  │ React + Vite :5173   │ ◀───────── │ FastAPI + SQLite :8000       │ ◀─────── │ (Samrudh)            │
- └──────────────────────┘   JSON     │ PDF · QR · OMR · insights    │  dicts   │ prompts · validators │
+ └──────────────────────┘   JSON     │ PDF · Gemini scan · insights │  dicts   │ prompts · validators │
             ▲                        └──────────────────────────────┘          └──────────────────────┘
             │ mock mode                              ▲                                   ▲
             └──────────────── tests/fixtures/*.json (Samrudh) ───────────────────────────┘
@@ -70,7 +70,7 @@ Rohan merges. After each checkpoint **everyone pulls `main`** and confirms it ru
 | # | Time | Merged | Must work on `main` |
 |---|---|---|---|
 | I1 | H02 | skeletons + fixtures + AI stub | backend + frontend both start; frontend shows mock screens |
-| I2 | H05 | create/approve/print + real question generation | **M1:** type concepts → approve → PDF with 5 QR sheets |
+| I2 | H05 | create/approve/print + real question generation | **M1:** type concepts → approve → PDF with 5 roll-number papers |
 | I3 | H09 | scanner + scanner page + tunnel | **M2:** phone scans 5 real sheets → correct IDs + answers |
 | I4 | H12 | review/confirm + insights + teaching suggestions | **M3:** confirmed answers → misconception card with evidence |
 | I5 | H15 | follow-up + student view | **M4:** complete loop, nothing on mock |
@@ -85,7 +85,7 @@ On a fresh `git clone` of `main`, with `.env` filled in, all of this works with 
 
 - [ ] Teacher logs in, enters concepts, gets 3 AI questions (or labelled sample questions if AI is down)
 - [ ] Teacher edits one question, approves; invalid questions block approval
-- [ ] Print gives 5 personalised A4 sheets with QR codes
+- [ ] Print gives 5 identical A4 papers with roll-number boxes at the top (no QR, no names)
 - [ ] Phone (over HTTPS) scans a **freshly filled** sheet → correct student + answers within seconds
 - [ ] Double-bubbled / faint / duplicate sheets go to review or are flagged, never guessed
 - [ ] Teacher confirms → insights show distribution, top *possible* misconception, evidence, 5-minute activity
@@ -106,12 +106,15 @@ pip install -r requirements.txt
 python -m app.seed
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# terminal 2: frontend
-cd frontend && npm install && npm run dev -- --host
+# terminal 2: build the website once (the backend serves it at http://localhost:8000)
+cd frontend && npm install && npm run build
 
-# terminal 3: HTTPS for the phone camera
-cloudflared tunnel --url http://localhost:5173
+# terminal 3: HTTPS for the phone camera. The printed https://….trycloudflare.com address is the
+# whole app: open it, sign in, done. No second address to copy.
+cloudflared tunnel --url http://localhost:8000
 ```
+For live UI work, `npm run dev` on :5173 still works (it proxies `/api` to :8000, and accepts `*.trycloudflare.com` hosts).
+A quick tunnel gets a new random address every run; for a fixed address, use a named Cloudflare tunnel on your own domain.
 Then Saniya runs the test pack and the demo runbook start to finish, Samrudh checks every AI sentence on screen, Risheeth fixes UI issues, Sree Athira times the pitch against the real app.
 
 ## Rules that keep the combine painless

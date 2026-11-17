@@ -5,11 +5,11 @@ All student names are fictional.
 """
 
 ROSTER = [
-    {"id": "st_01", "display_name": "Aarav", "student_code": "7A-01", "pin": "1111"},
-    {"id": "st_02", "display_name": "Diya", "student_code": "7A-02", "pin": "2222"},
-    {"id": "st_03", "display_name": "Kabir", "student_code": "7A-03", "pin": "3333"},
-    {"id": "st_04", "display_name": "Meera", "student_code": "7A-04", "pin": "4444"},
-    {"id": "st_05", "display_name": "Rehan", "student_code": "7A-05", "pin": "5555"},
+    {"id": "st_01", "display_name": "Aarav", "student_code": "7A-01", "roll_no": "01", "pin": "1111"},
+    {"id": "st_02", "display_name": "Diya", "student_code": "7A-02", "roll_no": "02", "pin": "2222"},
+    {"id": "st_03", "display_name": "Kabir", "student_code": "7A-03", "roll_no": "03", "pin": "3333"},
+    {"id": "st_04", "display_name": "Meera", "student_code": "7A-04", "roll_no": "04", "pin": "4444"},
+    {"id": "st_05", "display_name": "Rehan", "student_code": "7A-05", "roll_no": "05", "pin": "5555"},
 ]
 
 

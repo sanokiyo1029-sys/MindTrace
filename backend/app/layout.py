@@ -11,25 +11,41 @@ def base() -> dict:
     return json.loads(_PATH.read_text())
 
 
-def question_blocks(n: int) -> list[dict]:
-    """Per question: stem position, bubble centres (mm) and the reasoning box (mm)."""
+def paper_code(assessment_id: str) -> str:
+    """Short code printed on every copy so a scan can be checked against the selected assessment."""
+    return assessment_id.split("_", 1)[-1].upper()
+
+
+DESCRIPTIVE_WEIGHT = 1.6  # a written-answer block gets more room than a bubble question
+
+
+def question_blocks(n: int, types: list[str] | None = None) -> list[dict]:
+    """Per question: stem position, bubble centres (mm) and the reasoning / written-answer box (mm).
+    types[i] is "mcq" (default) or "descriptive"; descriptive blocks have no bubbles, only a big answer box."""
     L = base()
     n = max(1, min(n, L["max_questions"]))
+    types = [(types[i] if types and i < len(types) else "mcq") for i in range(n)]
     top, bottom = L["questions_top_mm"], L["questions_bottom_mm"]
-    h = (bottom - top) / n
-    blocks = []
-    for i in range(n):
-        y0 = top + i * h
+    weights = [DESCRIPTIVE_WEIGHT if t == "descriptive" else 1.0 for t in types]
+    unit = (bottom - top) / sum(weights)
+    blocks, y0 = [], top
+    for i, (t, wgt) in enumerate(zip(types, weights)):
+        h = unit * wgt
         stem_y = y0 + 6
-        bubble_y = y0 + min(20, h * 0.36)
-        why_top = bubble_y + 10  # leaves room for 2-3 lines of option text
+        if t == "descriptive":
+            bubbles, why_top = {}, y0 + 14  # room for a two-line question
+        else:
+            bubble_y = y0 + min(20, h * 0.36)
+            bubbles = {opt: (x, bubble_y) for opt, x in zip("ABCD", L["bubble_option_x_mm"])}
+            why_top = bubble_y + 10  # leaves room for 2-3 lines of option text
         why_bottom = y0 + h - 4
         blocks.append({
-            "index": i,
-            "y0": y0,
-            "height": h,
-            "stem_xy": (20, stem_y),
-            "bubbles": {opt: (x, bubble_y) for opt, x in zip("ABCD", L["bubble_option_x_mm"])},
+            "index": i, "type": t, "y0": y0, "height": h, "stem_xy": (20, stem_y), "bubbles": bubbles,
             "why_box": (20, why_top, 190, max(why_bottom, why_top + 8)),  # x0, y0, x1, y1
         })
+        y0 += h
     return blocks
+
+
+def question_types(questions: list[dict]) -> list[str]:
+    return [q.get("type") or "mcq" for q in questions]
