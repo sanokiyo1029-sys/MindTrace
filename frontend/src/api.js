@@ -31,8 +31,11 @@ async function request(path, options = {}) {
   const usesTeacherToken = teacherToken && !path.includes('/auth/') && !headers.has('Authorization');
   if (usesTeacherToken) headers.set('Authorization', `Bearer ${teacherToken}`);
   let response;
-  try { response = await fetch(`${apiBase()}${path}`, { ...options, headers }); }
-  catch { throw new Error(`Could not reach the MindTrace server at ${apiBase()}. Check the Server address and that the backend is running.`); }
+  try { response = await fetch(`${apiBase()}${path}`, { ...options, headers, signal: AbortSignal.timeout(70000) }); }
+  catch (error) {
+    if (error.name === 'TimeoutError') throw new Error('The server took too long to answer. Please try again.');
+    throw new Error(isNative ? `Could not reach the MindTrace server at ${getServer()}. Check the Server address and that the backend is running.` : 'Could not reach the MindTrace server. Check your connection and that the backend is running.');
+  }
   const type = response.headers.get('content-type') || '';
   if (!response.ok) {
     const body = type.includes('json') ? await response.json() : null;
@@ -47,6 +50,7 @@ async function request(path, options = {}) {
 const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 export const api = {
+  health: () => request('/health'),
   login: (body) => request('/auth/teacher/login', json('POST', body)),
   students: (classId) => request(`/classes/${classId}/students`),
   assessments: () => request('/assessments'),

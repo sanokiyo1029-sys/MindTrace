@@ -49,7 +49,8 @@ async def validation_error(_: Request, exc: RequestValidationError):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "ai_mode": config.AI_MODE, "ai_module_loaded": ai_bridge.ai_module_loaded()}
+    return {"ok": True, "ai_mode": config.AI_MODE, "ai_module_loaded": ai_bridge.ai_module_loaded(),
+            "ai_provider": ai_bridge.provider()}  # app.ai | gemini | samples (the key itself never leaves the server)
 
 
 for r in (auth.router, classes.router, assessments.router, scans.router, insights_route.router, student.router):

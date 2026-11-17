@@ -1,6 +1,7 @@
 """Plain-Python aggregation: verified answers -> possible misconceptions with evidence. No AI here
 except the teaching suggestion + follow-up question text, which come through ai_bridge."""
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 from app import ai_bridge
 
@@ -53,11 +54,18 @@ def build(assessment: dict, questions: list[dict], scans: list[dict], printed: i
             "teaching_action": None,
             "followup_question": None,
         }
-        if with_ai and rank < 3:  # only the top few get (possibly slow) AI calls
-            card["teaching_action"] = ai_bridge.teaching_suggestion(mid, card["evidence"])
-            fq = ai_bridge.followup_questions([mid], 1)
-            card["followup_question"] = fq[0] if fq else None
         cards.append(card)
+    if with_ai and cards:  # only the top few get (possibly slow) AI calls, asked in parallel
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            jobs = [(c, pool.submit(ai_bridge.teaching_suggestion, c["misconception_id"], c["evidence"]),
+                     pool.submit(ai_bridge.followup_questions, [c["misconception_id"]], 1)) for c in cards[:3]]
+        for c, teach, follow in jobs:
+            c["teaching_action"] = teach.result()
+            fq = follow.result()
+            c["followup_question"] = fq[0] if fq else None
+    used_ai = ai_bridge.ai_module_loaded() or any(
+        (c["teaching_action"] or {}).get("source") == "ai" or (c["followup_question"] or {}).get("source") == "ai"
+        for c in cards)
 
     caveats = ["Handwriting not analysed (OCR disabled)"]
     missing = max(printed - total, 0)
@@ -71,5 +79,5 @@ def build(assessment: dict, questions: list[dict], scans: list[dict], printed: i
         "questions": q_stats,
         "misconceptions": cards,
         "caveats": caveats,
-        "generated_by": "rules+ai" if ai_bridge.ai_module_loaded() else "rules+samples",
+        "generated_by": "rules+ai" if used_ai else "rules+samples",
     }

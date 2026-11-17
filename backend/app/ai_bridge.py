@@ -13,9 +13,10 @@ import copy
 import json
 import logging
 import re
+import threading
 from fractions import Fraction
 
-from app import demo_data
+from app import demo_data, gemini
 from app.config import FIXTURES_DIR
 
 log = logging.getLogger("mindtrace.ai")
@@ -31,6 +32,11 @@ except Exception:  # pragma: no cover - depends on teammate's code
 
 def ai_module_loaded() -> bool:
     return _HAS_AI
+
+
+def provider() -> str:
+    """Who answers AI calls right now: Samrudh's module, Gemini, or the saved samples."""
+    return "app.ai" if _HAS_AI else "gemini" if gemini.enabled() else "samples"
 
 
 # ---------------------------------------------------------------- shared data
@@ -132,10 +138,145 @@ def _fallback_validate(q: dict) -> list[str]:
 def _fallback_teaching(misconception_id: str, evidence: list[dict]) -> dict:
     m = misconception_library().get(misconception_id)
     if m and m.get("teaching_activity"):
-        return copy.deepcopy(m["teaching_activity"])
-    return {"title": "Re-teach with a model", "minutes": 5,
+        return {**copy.deepcopy(m["teaching_activity"]), "source": "sample"}
+    return {"title": "Re-teach with a model", "minutes": 5, "source": "sample",
             "steps": ["Show the idea with a drawing or paper strip.", "Work one example together.",
                       "Ask students to explain the step in their own words."]}
+
+
+# ---------------------------------------------------------------- Gemini
+# Used when Samrudh's module isn't installed and AI_MODE=live, LLM_PROVIDER=gemini, LLM_API_KEY are set.
+# Output goes through the same validation as everything else; anything that fails falls back to labelled samples.
+_SYSTEM = ("You write short multiple-choice questions for a paper quiz in a school maths class. Students answer "
+           "by filling one bubble, so keep wording short and plain. Exactly one option is correct; do the maths "
+           "carefully. Every wrong option must match one specific common misconception from the list you are given, "
+           "so the teacher can spot a possible misconception from the answer pattern. Never include names or "
+           "personal data. Describe misconceptions as possible, never as facts about a student.")
+_LETTERS = ["A", "B", "C", "D"]
+_cache: dict[str, object] = {}
+_cache_lock = threading.Lock()
+
+
+def _cached(key: list, make):
+    """Remember successful Gemini answers (insights reloads would otherwise re-ask every time)."""
+    k = json.dumps(key, sort_keys=True)
+    with _cache_lock:
+        if k in _cache:
+            return copy.deepcopy(_cache[k])
+    value = make()
+    with _cache_lock:
+        _cache[k] = value
+    return copy.deepcopy(value)
+
+
+def _question_schema() -> dict:
+    ids = sorted(misconception_library())
+    q = {"type": "object", "required": ["concept", "stem", "options", "answer", "explanation", "distractors", "difficulty"],
+         "properties": {
+             "concept": {"type": "string", "description": "the idea this question checks, a few words"},
+             "stem": {"type": "string", "description": "at most 25 words, fractions written like 2/3"},
+             "options": {"type": "object", "required": _LETTERS,
+                         "properties": {k: {"type": "string", "description": "at most 30 characters"} for k in _LETTERS}},
+             "answer": {"type": "string", "enum": _LETTERS},
+             "explanation": {"type": "string", "description": "one or two sentences a 12-year-old understands"},
+             "distractors": {"type": "array", "description": "one entry for every WRONG option", "items": {
+                 "type": "object", "required": ["option", "misconception_id", "why"],
+                 "properties": {"option": {"type": "string", "enum": _LETTERS},
+                                "misconception_id": {"type": "string", "enum": ids},
+                                "why": {"type": "string", "description": "what a student may have done, under 10 words"}}}},
+             "difficulty": {"type": "string", "enum": ["easy", "medium", "hard"]}}}
+    return {"type": "object", "required": ["questions"], "properties": {"questions": {"type": "array", "items": q}}}
+
+
+def _library_lines(ids: list[str] | None = None) -> str:
+    lib = misconception_library()
+    return "\n".join(f"- {mid}: {m.get('label', mid)}" for mid, m in lib.items() if ids is None or mid in ids)
+
+
+def _from_gemini(q: dict, topic: str) -> dict:
+    answer = q.get("answer")
+    opts = q.get("options") if isinstance(q.get("options"), dict) else {}
+    return {
+        "topic": topic, "concept": str(q.get("concept", "")).strip(), "stem": str(q.get("stem", "")).strip(),
+        "options": {k: str(opts.get(k, "")).strip() for k in _LETTERS}, "answer": answer,
+        "explanation": str(q.get("explanation", "")).strip(),
+        "distractors": {d["option"]: {"misconception_id": d.get("misconception_id"), "why": str(d.get("why", "")).strip()}
+                        for d in q.get("distractors") or []
+                        if isinstance(d, dict) and d.get("option") in _LETTERS and d.get("option") != answer},
+        "difficulty": q.get("difficulty") if q.get("difficulty") in ("easy", "medium", "hard") else "medium",
+        "source": "ai",
+    }
+
+
+def _gemini_questions(prompt: str, topic: str) -> tuple[list[dict], list[tuple[dict, list[str]]]]:
+    """Ask Gemini; split the answer into (valid questions, [(invalid question, its errors)])."""
+    raw = gemini.ask(_SYSTEM, prompt, _question_schema()).get("questions") or []
+    good, bad = [], []
+    for q in raw:
+        q = _from_gemini(q, topic) if isinstance(q, dict) else {}
+        errs = _fallback_validate(q) if q else ["Not a question."]
+        (bad.append((q, errs)) if errs else good.append(q))
+    return good, bad
+
+
+def _gemini_generate(topic: str, concepts_text: str, n: int, grade: str) -> tuple[list[dict], str | None]:
+    prompt = (f"Class grade: {grade}. Topic: {topic}.\nWhat the teacher just taught:\n{concepts_text or topic}\n\n"
+              f"Write exactly {n} questions that check these ideas, easiest first. Options A-D must all differ.\n"
+              f"Tag every wrong option with the misconception (from this list) that best explains choosing it:\n"
+              f"{_library_lines()}")
+    good, bad = _gemini_questions(prompt, topic)
+    if bad and len(good) < n:  # one repair round, showing Gemini exactly what our checks said
+        fix = "\n\n".join(f"Question: {json.dumps(q, ensure_ascii=False)}\nProblems: {'; '.join(e)}" for q, e in bad)
+        try:
+            fixed, _ = _gemini_questions("These questions failed our checks. Return corrected versions in the same "
+                                         f"format, keeping the same ideas:\n\n{fix}", topic)
+            good += fixed
+        except gemini.GeminiError as exc:
+            log.info("gemini repair failed: %s", exc.message)
+    good = good[:n]
+    if not good:
+        raise gemini.GeminiError("bad_output", "Gemini's questions didn't pass the checks.")
+    if len(good) < n:
+        samples = [q for q in _fallback_generate(topic, concepts_text, n, grade)
+                   if q["stem"] not in {g["stem"] for g in good}][: n - len(good)]
+        return good + samples, (f"Gemini drafted {len(good)} of {n} questions. {len(samples)} saved sample "
+                                f"question(s) were added because the other drafts failed the checks.")
+    return good, None
+
+
+def _gemini_teaching(misconception_id: str, evidence: list[dict]) -> dict:
+    m = misconception_library().get(misconception_id, {})
+    seen = "; ".join(f"{e.get('count')} student(s) chose option {e.get('option')}" for e in evidence) or "a repeated wrong answer"
+    example = json.dumps(m.get("teaching_activity") or {}, ensure_ascii=False)
+    schema = {"type": "object", "required": ["title", "minutes", "steps"], "properties": {
+        "title": {"type": "string", "description": "under 8 words"},
+        "minutes": {"type": "integer", "minimum": 3, "maximum": 10},
+        "steps": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": "string", "description": "one short sentence"}}}}
+    out = gemini.ask(
+        "You help a school maths teacher plan a quick whole-class activity. Use paper strips, drawings or a number "
+        "line so students test the idea themselves. Plain words, no student names, no labels like 'weak'.",
+        f"Possible misconception in the class: {m.get('label', misconception_id)}.\n"
+        f"What it may look like to a student: {m.get('student_friendly', '')}\n"
+        f"Evidence from the quiz: {seen}.\nAn activity the team already uses, for style: {example}\n"
+        "Suggest one different 5-minute activity with 3 short steps.", schema, temperature=0.6)
+    steps = [str(s).strip() for s in out.get("steps") or [] if str(s).strip()]
+    title = str(out.get("title", "")).strip()
+    minutes = out.get("minutes")
+    if not title or not 2 <= len(steps) <= 5 or not isinstance(minutes, int) or not 1 <= minutes <= 15 \
+            or any(len(s) > 220 for s in steps):
+        raise gemini.GeminiError("bad_output", "Gemini's activity didn't pass the checks.")
+    return {"title": title[:80], "minutes": minutes, "steps": steps, "source": "ai"}
+
+
+def _gemini_followups(misconception_ids: list[str], n: int) -> list[dict]:
+    prompt = (f"Write exactly {n} new question(s) to check, after reteaching, whether these possible "
+              f"misconceptions remain:\n{_library_lines(misconception_ids)}\n"
+              "For each question, one wrong option must match the targeted misconception; tag every wrong option "
+              f"with the best misconception from this full list:\n{_library_lines()}")
+    good, _ = _gemini_questions(prompt, "fractions")
+    if not good:
+        raise gemini.GeminiError("bad_output", "Gemini's follow-up questions didn't pass the checks.")
+    return good[:n]
 
 
 def _fallback_followups(misconception_ids: list[str], n: int) -> list[dict]:
@@ -167,6 +308,12 @@ def generate_questions(topic: str, concepts_text: str, n: int, grade: str) -> tu
                 return qs, note
         except Exception as exc:
             log.warning("ai.generate_questions failed, using samples: %s", exc)
+    elif gemini.enabled():
+        try:
+            return _gemini_generate(topic, concepts_text, n, grade)
+        except gemini.GeminiError as exc:
+            log.warning("gemini generate failed (%s): %s", exc.kind, exc.message)
+            return _fallback_generate(topic, concepts_text, n, grade), f"{exc.message} Using saved sample questions."
     return _fallback_generate(topic, concepts_text, n, grade), "Using saved sample questions (AI unavailable)"
 
 
@@ -190,6 +337,11 @@ def teaching_suggestion(misconception_id: str, evidence: list[dict]) -> dict:
                 return s
         except Exception as exc:
             log.warning("ai.teaching_suggestion failed: %s", exc)
+    elif gemini.enabled():
+        try:
+            return _cached(["teach", misconception_id, evidence], lambda: _gemini_teaching(misconception_id, evidence))
+        except gemini.GeminiError as exc:
+            log.warning("gemini teaching failed (%s): %s", exc.kind, exc.message)
     return _fallback_teaching(misconception_id, evidence)
 
 
@@ -202,4 +354,9 @@ def followup_questions(misconception_ids: list[str], n: int) -> list[dict]:
                 return good[:n]
         except Exception as exc:
             log.warning("ai.followup_questions failed: %s", exc)
+    elif gemini.enabled():
+        try:
+            return _cached(["followup", sorted(misconception_ids), n], lambda: _gemini_followups(misconception_ids, n))
+        except gemini.GeminiError as exc:
+            log.warning("gemini followups failed (%s): %s", exc.kind, exc.message)
     return _fallback_followups(misconception_ids, n)
