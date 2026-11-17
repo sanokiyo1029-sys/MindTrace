@@ -2,7 +2,8 @@ import hashlib
 import hmac
 import secrets
 
-from fastapi import Depends, Header, HTTPException, Query
+from fastapi import Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -27,9 +28,13 @@ def issue_token(db: Session, role: str, subject_id: str) -> str:
     return tok
 
 
-def _token_from(authorization: str | None, token_q: str | None) -> str | None:
-    if authorization and authorization.lower().startswith("bearer "):
-        return authorization[7:].strip()
+# HTTPBearer (not a raw Header) so /docs shows an Authorize button; same "Authorization: Bearer" header
+bearer = HTTPBearer(auto_error=False)
+
+
+def _token_from(creds: HTTPAuthorizationCredentials | None, token_q: str | None) -> str | None:
+    if creds:
+        return creds.credentials
     return token_q  # ?token= lets <a href> / <img> open the PDF and scan images
 
 
@@ -42,11 +47,11 @@ def _lookup(db: Session, tok: str | None, role: str):
     return row.subject_id
 
 
-def current_teacher(authorization: str | None = Header(default=None), token: str | None = Query(default=None),
+def current_teacher(creds: HTTPAuthorizationCredentials | None = Depends(bearer), token: str | None = Query(default=None),
                     db: Session = Depends(get_db)) -> Teacher:
-    return db.get(Teacher, _lookup(db, _token_from(authorization, token), "teacher"))
+    return db.get(Teacher, _lookup(db, _token_from(creds, token), "teacher"))
 
 
-def current_student(authorization: str | None = Header(default=None), token: str | None = Query(default=None),
+def current_student(creds: HTTPAuthorizationCredentials | None = Depends(bearer), token: str | None = Query(default=None),
                     db: Session = Depends(get_db)) -> Student:
-    return db.get(Student, _lookup(db, _token_from(authorization, token), "student"))
+    return db.get(Student, _lookup(db, _token_from(creds, token), "student"))

@@ -12,6 +12,14 @@ def test_health(client):
     assert client.get("/api/health").json()["ok"] is True
 
 
+def test_docs_authorize_and_query_token(client):
+    # /docs gets an Authorize button; ?token= still works for links the browser opens directly
+    assert "HTTPBearer" in client.get("/openapi.json").json()["components"]["securitySchemes"]
+    tok = _login(client)["Authorization"][7:]
+    assert client.get(f"/api/classes?token={tok}").status_code == 200
+    assert client.get("/api/classes", headers={"Authorization": "Basic x"}).status_code == 401
+
+
 def test_full_loop(client):
     H = _login(client)
     # 1. generate + edit + approve
