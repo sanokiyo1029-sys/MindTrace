@@ -14,6 +14,8 @@ export const isNative = Boolean(window.Capacitor?.isNativePlatform?.());
 export const getServer = () => store.get('mt_server');
 export const setServer = (url) => store.set('mt_server', url.trim().replace(/\/+$/, '').replace(/\/api$/, ''));
 const apiBase = () => getServer() ? `${getServer()}/api` : (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+// The sheet PDF is opened directly by the browser (or the phone's browser), so it authenticates with ?token= (CONTRACTS).
+export const printUrl = (id) => `${apiBase()}/assessments/${id}/print?token=${encodeURIComponent(teacherToken)}`;
 // Media URLs from the API start with /api/media/...; point them at the saved server when there is one.
 export const mediaUrl = (url) => url?.startsWith('/') && getServer() ? `${getServer()}${url}` : url;
 
@@ -39,7 +41,7 @@ async function request(path, options = {}) {
     error.validationErrors = body?.questions;
     throw error;
   }
-  return type.includes('application/pdf') ? response.blob() : response.json();
+  return response.json();
 }
 
 const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -53,7 +55,6 @@ export const api = {
   generate: (body) => request('/assessments/generate', json('POST', body)),
   editQuestion: (id, body) => request(`/questions/${id}`, json('PATCH', body)),
   approve: (id) => request(`/assessments/${id}/approve`, { method: 'POST' }),
-  print: (id) => request(`/assessments/${id}/print`),
   scans: (id) => request(`/assessments/${id}/scans`),
   uploadScan: (id, file) => { const form = new FormData(); form.append('image', file); return request(`/assessments/${id}/scans`, { method: 'POST', body: form }); },
   reviewScan: (id, body) => request(`/scans/${id}/review`, json('PATCH', body)),
