@@ -149,3 +149,56 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .scan-crop{background:#fffef7;border:1px dashed #231d1840;border-radius:2px}
 .scan-stats{background:var(--note);border:1.5px solid #231d1826;border-radius:2px}.scan-stats>div b{font-family:var(--head)}
 @media print{body{background:#fff}}
+
+/* ===== Motion & feedback. Borrowed sparingly from sakuga-vfx: squash-and-overshoot presses, small ink wedges,
+   a load bar that moves in surges. Short, only on things you act on, and off for reduced motion. ===== */
+:root{--spring:cubic-bezier(.34,1.56,.64,1);--ease-out:cubic-bezier(.22,1,.36,1)}
+.page-enter{animation:page-in .32s var(--ease-out) both}
+@keyframes page-in{from{opacity:0;transform:translateY(8px)}}
+.button{transition:transform .32s var(--spring),box-shadow .2s var(--ease-out),background-color .15s ease,border-color .15s ease}
+.button:active:not(:disabled){transform:translateY(1px) scale(.97,.93);transition-duration:.07s}
+.button.primary:active:not(:disabled){box-shadow:1px 1px 0 var(--red)}
+.button[aria-busy=true]{cursor:progress}
+.button[aria-busy=true]::after{content:"";width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.assessment-row,.nav-item,.question-tabs button,.text-link svg{transition:transform .28s var(--spring),background-color .15s ease,box-shadow .2s ease}
+@media(hover:hover){
+  .button:hover:not(:disabled){transform:translateY(-1px)}
+  .button.primary:hover:not(:disabled){box-shadow:3px 5px 0 var(--red)}
+  .assessment-row:hover{transform:translateY(-2px) rotate(-.3deg);box-shadow:2px 4px 0 #231d1822}
+  .nav-item:hover:not(.active){transform:translateX(3px)}
+  .question-tabs button:hover{transform:translateY(-1px)}
+  .text-link:hover svg{transform:translateX(3px)}
+}
+.assessment-row:active{transform:scale(.99)}
+
+/* loading line: shows only if a request takes over a quarter second */
+.busy-bar{position:fixed;top:0;left:0;right:0;height:3px;z-index:40;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .2s ease}
+.busy-bar.on{opacity:1;transition-delay:.25s}
+.busy-bar::before{content:"";position:absolute;top:0;bottom:0;left:0;width:35%;border-radius:0 3px 3px 0;background:linear-gradient(90deg,transparent,var(--red) 35%,var(--ink));animation:surge 1.8s cubic-bezier(.7,0,.3,1) infinite}
+@keyframes surge{0%{transform:translateX(-100%)}40%{transform:translateX(90%)}55%{transform:translateX(120%)}100%{transform:translateX(300%)}}
+
+/* toasts: ink card that springs in; success gets a check and three small wedges */
+.toast{background:var(--note);color:var(--ink);border:2px solid var(--ink);border-radius:3px;box-shadow:4px 4px 0 var(--ink);font:400 15px/1.4 var(--body);padding:11px 10px 11px 12px;gap:11px;overflow:visible;animation:toast-pop .45s var(--spring) both}
+.toast-text{flex:1}
+.toast button{color:var(--ink)}
+.toast-badge{flex:0 0 26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 15px var(--mono);border:2px solid var(--ink);background:var(--yellow)}
+.toast-success{box-shadow:4px 4px 0 #8fb25a}.toast-success .toast-badge{background:var(--leaf)}
+.toast-error{box-shadow:4px 4px 0 var(--red)}.toast-error .toast-badge{background:var(--red);border-color:var(--red);color:var(--note)}
+@keyframes toast-pop{0%{opacity:0;transform:translateY(14px) scale(.96)}60%{opacity:1;transform:translateY(-3px) scale(1.01)}100%{transform:none}}
+.wedges{position:absolute;top:-17px;right:16px;width:30px;height:16px;pointer-events:none}
+.wedges::before,.wedges::after,.wedges i{content:"";position:absolute;bottom:0;width:5px;height:14px;background:#e8578a;clip-path:polygon(50% 0,100% 100%,0 100%);transform-origin:50% 100%;animation:wedge .8s var(--spring) .12s both}
+.wedges::before{left:2px;rotate:-32deg}.wedges i{left:12px}.wedges::after{left:22px;rotate:32deg}
+@keyframes wedge{0%{opacity:0;scale:.2}35%{opacity:1;scale:1.1}75%{opacity:1;scale:1}100%{opacity:0;scale:1}}
+
+/* access + states */
+.skip-link{position:fixed;left:12px;top:-60px;z-index:50;background:var(--ink);color:var(--note);padding:10px 14px;border-radius:2px;font:700 13px var(--mono);transition:top .2s var(--ease-out)}
+.skip-link:focus{top:12px}
+.signed-out .side-nav,.signed-out .school-label,.signed-out .mobile-nav,.signed-out .crumb,.signed-out .teacher-chip,.signed-out .profile-button{display:none}
+.note-banner{display:flex;gap:10px;align-items:flex-start;margin:0 0 18px;padding:12px 14px;background:#fff4c2;border:1.5px solid #7a4b00;border-radius:2px;color:#5c3900}
+.note-banner p{margin:0}
+.source-tag{display:inline-block;margin-left:8px;padding:2px 7px;border-radius:2px;font:700 11px var(--mono);letter-spacing:.6px;text-transform:uppercase;vertical-align:middle;border:1.5px solid currentColor}
+.source-ai{color:var(--blue);background:#e3eefa}.source-sample{color:#7a4b00;background:#fff4c2}.source-teacher{color:#2f4a12;background:var(--leaf)}
+.activity-card .source-tag{justify-self:start;margin:4px 0 0}
+.busy-hint{margin:10px 0 0;color:var(--muted);font-size:13px}
+@media(prefers-reduced-motion:reduce){.busy-bar::before{animation:none;width:100%;opacity:.7}.page-enter{animation:none}.wedges{display:none}}

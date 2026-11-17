@@ -25,7 +25,18 @@ export const getTeacherToken = () => teacherToken;
 export const setTeacherToken = (token) => { teacherToken = token; store.set('mt_token', token); };
 export const setOnAuthLost = (fn) => { onAuthLost = fn; };
 
+// How many requests are in flight; the app shows a thin loading line while any are.
+let pending = 0;
+let busyListener = () => {};
+export const onBusy = (fn) => { busyListener = fn; return () => { busyListener = () => {}; }; };
+
 async function request(path, options = {}) {
+  pending += 1; busyListener(true);
+  try { return await send(path, options); }
+  finally { pending -= 1; busyListener(pending > 0); }
+}
+
+async function send(path, options) {
   if (isNative && !getServer()) throw new Error('Set the Server address first (for example https://….trycloudflare.com).');
   const headers = new Headers(options.headers || {});
   const usesTeacherToken = teacherToken && !path.includes('/auth/') && !headers.has('Authorization');
