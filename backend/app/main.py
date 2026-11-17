@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import ai_bridge, config
@@ -57,3 +57,20 @@ for r in (auth.router, classes.router, assessments.router, scans.router, insight
     app.include_router(r)
 
 app.mount("/api/media", StaticFiles(directory=config.MEDIA_DIR), name="media")
+
+
+# The website (frontend/dist, from `npm run build`) is served here too, so one address, or one Cloudflare
+# tunnel to :8000, is the whole app: open it, sign in, land on the dashboard. Registered last on purpose.
+@app.get("/{path:path}", include_in_schema=False)
+def website(path: str):
+    if path == "api" or path.startswith("api/"):
+        raise HTTPException(404, detail={"error": "not_found", "message": "No such API route."})
+    dist = config.FRONTEND_DIST.resolve()
+    file = (dist / path).resolve()
+    if path and file.is_file() and dist in file.parents:
+        return FileResponse(file)
+    index = dist / "index.html"
+    if index.is_file():  # app routes like /insights are handled by the React router
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+    raise HTTPException(404, detail={"error": "website_not_built",
+                                     "message": "The website isn't built yet. Run `npm run build` in frontend/."})

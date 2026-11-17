@@ -19,23 +19,37 @@ if not exist .venv (
 )
 call .venv\Scripts\activate.bat
 
-if not exist .venv\installed.flag (
+REM installed.flag is a copy of requirements.txt, so new packages get installed when the list changes
+fc /b requirements.txt .venv\installed.flag >nul 2>nul
+if errorlevel 1 (
   echo Installing packages, this takes a few minutes the first time...
   python -m pip install --upgrade pip >nul
   python -m pip install -r requirements.txt || (echo Package install failed & pause & exit /b 1)
-  echo ok> .venv\installed.flag
+  copy /y requirements.txt .venv\installed.flag >nul
 )
 
 if not exist ..\.env copy ..\.env.example ..\.env >nul
 
+REM The backend also serves the website; build it once if it is missing (after frontend changes: npm run build)
+if not exist ..\frontend\dist\index.html (
+  where npm >nul 2>nul && (
+    echo Building the website...
+    pushd ..\frontend
+    call npm ci
+    call npm run build
+    popd
+  )
+)
+
 echo.
 echo  ==============================================================
-echo   MindTrace API: http://localhost:8000/docs
+echo   MindTrace website: http://localhost:8000   (API docs: /docs)
 echo   Teacher login: teacher@mindtrace.demo / demo1234
 echo   Students: 7A-01 / 1111 ... 7A-05 / 5555
+echo   Phone / other devices: cloudflared tunnel --url http://localhost:8000
 echo   Stop with Ctrl+C
 echo  ==============================================================
 echo.
-start "" http://localhost:8000/docs
+start "" http://localhost:8000
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 pause

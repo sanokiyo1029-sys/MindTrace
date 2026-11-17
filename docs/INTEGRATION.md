@@ -106,12 +106,15 @@ pip install -r requirements.txt
 python -m app.seed
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# terminal 2: frontend
-cd frontend && npm install && npm run dev -- --host
+# terminal 2: build the website once (the backend serves it at http://localhost:8000)
+cd frontend && npm install && npm run build
 
-# terminal 3: HTTPS for the phone camera
-cloudflared tunnel --url http://localhost:5173
+# terminal 3: HTTPS for the phone camera. The printed https://….trycloudflare.com address is the
+# whole app: open it, sign in, done. No second address to copy.
+cloudflared tunnel --url http://localhost:8000
 ```
+For live UI work, `npm run dev` on :5173 still works (it proxies `/api` to :8000, and accepts `*.trycloudflare.com` hosts).
+A quick tunnel gets a new random address every run; for a fixed address, use a named Cloudflare tunnel on your own domain.
 Then Saniya runs the test pack and the demo runbook start to finish, Samrudh checks every AI sentence on screen, Risheeth fixes UI issues, Sree Athira times the pitch against the real app.
 
 ## Rules that keep the combine painless
