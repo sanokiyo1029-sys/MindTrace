@@ -179,6 +179,9 @@ All paths below are served under the **`/api`** prefix (e.g. `POST /api/assessme
 |---|---|---|---|
 | POST | `/auth/teacher/login` | `{email, password}`, one seeded demo teacher | `{token}` |
 | POST | `/auth/student/login` | `{student_code, pin}` | `{token}` |
+| GET | `/auth/config` | public; what the sign-in screen can offer | `{google_client_id}` (`null` = Google sign-in off) |
+| POST | `/auth/google` | `{credential}` = Google ID token. Linked **teachers** only (verified email = a teacher's email or in `GOOGLE_TEACHER_EMAILS`); never student access | `{token, teacher}`; 403 `google_not_linked` |
+| POST | `/auth/logout` | ends the session for the sent token (any role) | `{ok}` |
 | GET | `/classes/{id}/students` | | `Student[]` |
 | POST | `/assessments/generate` | `{class_id, topic, concepts_text, num_questions}` | `Assessment` (draft) |
 | PATCH | `/questions/{id}` | partial `Question` (teacher edits) | `Question` |
@@ -191,7 +194,7 @@ All paths below are served under the **`/api`** prefix (e.g. `POST /api/assessme
 | GET | `/assessments/{id}/insights` | | `InsightReport` |
 | POST | `/assessments/{id}/followup` | `{misconception_ids: []}` | new draft `Assessment` |
 | GET | `/student/me/results` | student token | Student report |
-| GET | `/health` | | `{ok, ai_mode, ai_module_loaded}` |
+| GET | `/health` | | `{ok, ai_mode, ai_module_loaded, ai_provider}` |
 | GET | `/classes` | teacher's classes | `[{id, name, grade}]` |
 | GET | `/assessments` | teacher's assessments, newest first | `[{id, title, topic, status, ...}]` |
 | GET | `/assessments/{id}` | | `Assessment` |
@@ -205,6 +208,8 @@ Errors are always `{ "error": "code", "message": "human text" }`.
 - Assessment: `notes` (e.g. `"Using saved sample questions (AI unavailable)"`). Show it in the UI.
 - Question: `validation_errors` (list of strings; approve is blocked until all are empty) and `edited_by_teacher`.
 - Scan progress: `rejected` (last 5 rejected scans still worth showing as "rescan").
+- Health: `ai_provider` = `app.ai` | `gemini` | `samples` (who answers AI calls right now).
+- InsightReport `teaching_action`: `source` = `ai` | `sample`. Questions keep `source` (`ai` | `teacher` | `sample`); show it.
 
 ## AI module interface (research owns `backend/app/ai/`)
 

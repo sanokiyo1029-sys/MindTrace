@@ -41,7 +41,8 @@ async function request(path, options = {}) {
 async function send(path, options) {
   if (isNative && !getServer()) throw new Error('Set the Server address first (for example https://….trycloudflare.com).');
   const headers = new Headers(options.headers || {});
-  const usesTeacherToken = teacherToken && !path.includes('/auth/') && !headers.has('Authorization');
+  const isSignIn = /\/login$|^\/auth\/google$/.test(path);
+  const usesTeacherToken = teacherToken && !isSignIn && !headers.has('Authorization');
   if (usesTeacherToken) headers.set('Authorization', `Bearer ${teacherToken}`);
   let response;
   try { response = await fetch(`${apiBase()}${path}`, { ...options, headers, signal: AbortSignal.timeout(70000) }); }
@@ -65,6 +66,9 @@ const json = (method, body) => ({ method, headers: { 'Content-Type': 'applicatio
 export const api = {
   health: () => request('/health'),
   login: (body) => request('/auth/teacher/login', json('POST', body)),
+  authConfig: () => request('/auth/config'),
+  googleLogin: (body) => request('/auth/google', json('POST', body)),
+  logout: () => request('/auth/logout', { method: 'POST' }),
   students: (classId) => request(`/classes/${classId}/students`),
   assessments: () => request('/assessments'),
   assessment: (id) => request(`/assessments/${id}`),

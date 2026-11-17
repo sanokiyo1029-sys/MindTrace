@@ -63,6 +63,8 @@ function App() {
   }
 
   function signOut() {
+    api.logout().catch(() => {}); // end the session on the server too
+    window.google?.accounts?.id?.disableAutoSelect(); // after Google sign-in: don't silently pick the account again
     setTeacherToken(''); setTeacherTokenState(''); store.set('mt_assessment', '');
     setAssessment(emptyAssessment); setInsights(null); navigate('/');
   }
@@ -175,12 +177,42 @@ function PageHeading({ eyebrow, title, description, action }) { return <div clas
 function Button({ children, variant = 'primary', icon, className = '', ...props }) { return <button className={`button ${variant} ${className}`} {...props}>{icon && <Icon name={icon} size={17} />}{children}</button>; }
 function Panel({ children, className = '' }) { return <section className={`panel ${className}`}>{children}</section>; }
 
+// "Continue with Google" (Google Identity Services). Shown only when the server has a Google client ID, and not
+// in the Android app: Google blocks sign-in inside app web views (a native sign-in can post to /auth/google later).
+// The backend checks the token and allows linked teacher accounts only; closing Google's window just does nothing.
+let gisScript;
+const loadGis = () => gisScript ||= new Promise((resolve, reject) => {
+  const s = Object.assign(document.createElement('script'), { src: 'https://accounts.google.com/gsi/client', async: true });
+  s.onload = resolve; s.onerror = () => { gisScript = null; reject(new Error('Google sign-in could not load.')); };
+  document.head.append(s);
+});
+function GoogleButton({ onToken, onError }) {
+  const slot = useRef(null); const [state, setState] = useState('off'); // off | ready | working | unavailable
+  useEffect(() => {
+    if (isMock || isNative) return;
+    let live = true;
+    api.authConfig().then(({ google_client_id: clientId }) => {
+      if (!clientId || !live) return;
+      return loadGis().then(() => {
+        if (!live) return;
+        window.google.accounts.id.initialize({ client_id: clientId, auto_select: false, cancel_on_tap_outside: true, context: 'signin', ux_mode: 'popup',
+          callback: async ({ credential }) => { setState('working'); onError(''); try { onToken((await api.googleLogin({ credential })).token); } catch (e) { onError(e.message); setState('ready'); } } });
+        window.google.accounts.id.renderButton(slot.current, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular', logo_alignment: 'left', width: 300 });
+        setState('ready');
+      }, () => live && setState('unavailable'));
+    }).catch(() => {}); // server unreachable: the password form shows that error on submit
+    return () => { live = false; };
+  }, []);
+  if (state === 'unavailable') return <p className="google-note">Google sign-in couldn’t load. Use your email and password.</p>;
+  return <div className="google-signin" hidden={state === 'off'}><div className="or-divider"><span>or</span></div><div ref={slot} className="google-slot"/>{state === 'working' && <p className="busy-hint" role="status">Signing in with Google…</p>}</div>;
+}
+
 function TeacherLogin({ setTeacherTokenState, navigate }) {
   const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [error,setError]=useState(''); const [loading,setLoading]=useState(false);
   // Every sign-in method ends here: keep the token, then go straight to the dashboard.
   const signedIn=(token)=>{setTeacherToken(token);setTeacherTokenState(token);navigate('/',{replace:true});};
   async function submit(e){e.preventDefault();setError('');setLoading(true);try{signedIn((await api.login({email,password})).token);}catch(err){setError(err.message);}finally{setLoading(false);}}
-  return <Panel className="student-panel"><div className="student-login"><span className="student-lock"><Icon name="shield" size={23}/></span><h2>Welcome to MindTrace</h2><p>Sign in to your teacher workspace.</p><form onSubmit={submit}><label className="field">Email<input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required/></label><label className="field">Password<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<div className="field-error" role="alert">{error}</div>}{isNative&&<ServerField/>}<Button type="submit" disabled={loading} icon="arrow">{loading?'Signing in…':'Sign in'}</Button></form><small>Use the teacher account configured by your MindTrace backend.</small><Link to="/student" className="text-link">Student? See your own results <Icon name="arrow" size={15}/></Link></div></Panel>;
+  return <Panel className="student-panel"><div className="student-login"><span className="student-lock"><Icon name="shield" size={23}/></span><h2>Welcome to MindTrace</h2><p>Sign in to your teacher workspace.</p><form onSubmit={submit}><label className="field">Email<input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required/></label><label className="field">Password<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<div className="field-error" role="alert">{error}</div>}{isNative&&<ServerField/>}<Button type="submit" disabled={loading} aria-busy={loading} icon="arrow">{loading?'Signing in…':'Sign in'}</Button></form><GoogleButton onToken={signedIn} onError={setError}/><small>Use the teacher account configured by your MindTrace backend.</small><Link to="/student" className="text-link">Student? See your own results <Icon name="arrow" size={15}/></Link></div></Panel>;
 }
 
 // Where the backend lives. Empty on the website (same server); the Android app needs the tunnel URL.

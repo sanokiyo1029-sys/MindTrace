@@ -201,4 +201,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .source-ai{color:var(--blue);background:#e3eefa}.source-sample{color:#7a4b00;background:#fff4c2}.source-teacher{color:#2f4a12;background:var(--leaf)}
 .activity-card .source-tag{justify-self:start;margin:4px 0 0}
 .busy-hint{margin:10px 0 0;color:var(--muted);font-size:13px}
+.or-divider{display:flex;align-items:center;gap:10px;margin:18px 0 12px;color:var(--muted);font:700 12px var(--mono);text-transform:uppercase;letter-spacing:1px}
+.or-divider::before,.or-divider::after{content:"";flex:1;border-top:1px dashed #231d1840}
+.google-slot{display:flex;justify-content:center;min-height:44px}
+.google-note{color:var(--muted);font-size:13px;margin:14px 0 0}
 @media(prefers-reduced-motion:reduce){.busy-bar::before{animation:none;width:100%;opacity:.7}.page-enter{animation:none}.wedges{display:none}}
