@@ -68,7 +68,10 @@ export const api = {
   login: (body) => request('/auth/teacher/login', json('POST', body)),
   authConfig: () => request('/auth/config'),
   googleLogin: (body) => request('/auth/google', json('POST', body)),
-  logout: () => request('/auth/logout', { method: 'POST' }),
+  logout: (studentToken) => request('/auth/logout', {
+    method: 'POST',
+    ...(studentToken && { headers: { Authorization: `Bearer ${studentToken}` } }),
+  }),
   students: (classId) => request(`/classes/${classId}/students`),
   assessments: () => request('/assessments'),
   assessment: (id) => request(`/assessments/${id}`),

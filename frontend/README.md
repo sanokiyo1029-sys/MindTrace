@@ -1,6 +1,6 @@
 # MindTrace frontend
 
-React + Vite teacher workspace for the paper-first assessment flow. The same build runs as the website and, wrapped with Capacitor, as the Android app.
+React + Vite frontend for the paper-first assessment flow. The same build runs as the website and, wrapped with Capacitor, as the Android app.
 
 ## Run locally
 
@@ -17,8 +17,8 @@ The development server runs at `http://localhost:5173`. It proxies `/api/*` to `
 
 Vite reads the **repo-root `.env`** (`envDir: '..'`, see `docs/INTEGRATION.md`).
 
-- **Live mode is the default.** Every screen calls the backend.
-- `VITE_MOCK=true` turns on mock mode: the labelled fictional fixture in `src/fixtures/demo.json`. A "Mock mode · sample data, not live" tag shows on every screen. It does not fake sheet PDFs, scan results or student sign-in.
+- Standard teacher and student sign-in uses the backend.
+- The teacher sign-in page offers **Explore sample workspace**, which uses the labelled fictional fixture in `src/fixtures/demo.json`. Set `VITE_MOCK=false` to hide the sample entry or `VITE_MOCK=true` to open the sample by default. Sample mode leaves PDF generation and scan processing to the backend.
 - `VITE_API_URL` defaults to `/api`.
 - **Server address** (Android app only): where the backend lives, saved on the device, e.g. `https://xxxx.trycloudflare.com`. The website always uses the server it was loaded from.
 - **Gemini** runs on the server (see the root `.env`: `AI_MODE=live`, `LLM_API_KEY`). The New assessment screen says whether Gemini or the labelled saved samples are in use; questions and activities are tagged "AI draft" or "Saved sample", and fallback notes show as a banner.
@@ -50,7 +50,12 @@ On the phone: start a tunnel on the PC (`cloudflared tunnel --url http://localho
 
 ## Screens
 
-Overview (past assessments + per-student sheets), assessment setup, question review/approval, print preview, camera and image upload, scan review, class insights, teaching activity/follow-up, teacher login, and student results login (reachable without a teacher session).
+- `/` shows the public landing page and interactive fractions story.
+- `/login` lets teachers and students choose their sign-in method.
+- `/workspace` opens the teacher dashboard and its assessment, scan and insights tools.
+- `/student` shows the signed-in student’s own results and feedback.
+
+To exercise both roles and the sample workspace against the demo backend, open the preview in Playwright CLI and run `playwright-cli run-code --filename=tests/smoke.js` from this directory.
 
 ## API contract
 
