@@ -1,12 +1,13 @@
-# Task: Research + Prompting (AI module owner)
+# Task: Research & Development (AI module + prompting owner)
 
-**Owner:** `@________` · **Branch:** `feat/ai` · **Folders:** `backend/app/ai/`, `prompts/`, `tests/fixtures/`, `docs/misconceptions/`
+**Owner:** Samrudh (`@SamrudhNandakumar`) · **Branch:** `feat/ai` · **Folders:** `backend/app/ai/`, `prompts/`, `tests/fixtures/`, `docs/misconceptions/`
 
 You own the "brain": the misconception library, every prompt, the validators, and the sample data everyone else builds on. Your fixtures are what frontend and backend use **before** the real thing works, so ship them first.
 
-Read first: `docs/PROBLEM_STATEMENT.md`, `docs/CONTRACTS.md` (§1, §2, AI module interface), `AGENTS.md`.
+Read first: `docs/PROBLEM_STATEMENT.md`, `docs/CONTRACTS.md` (§1, §2, AI module interface), `AGENTS.md`. **How your part plugs into the others: `docs/INTEGRATION.md`.**
 
 ## R1 · Fixtures first (H00–H02) ← others are waiting on this
+- [ ] **By H01:** `backend/app/ai/__init__.py` exporting the 4 functions from CONTRACTS (`generate_questions`, `validate_question`, `teaching_suggestion`, `followup_questions`) that just return fixture data. Push it so Rohan can import it right away; you fill in the real logic behind the same names later
 - [ ] `tests/fixtures/roster.json`: 5 **fictional** students `{id, display_name, student_code, pin}`
 - [ ] `tests/fixtures/misconceptions_fractions.json`: 6–8 entries (shape in CONTRACTS §1). Suggested:
   - `M_ADD_DENOMS`: adds denominators too (1/3 + 1/3 = 2/6)

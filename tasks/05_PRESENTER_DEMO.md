@@ -1,9 +1,9 @@
 # Task: Presenter 2 (Live Demo Operator + Physical QA + Backup Speaker)
 
-**Owner:** `@________` · **Branch:** `docs/demo` · **Folder:** `demo/`
+**Owner:** Saniya (`@ssaniyabi`) · **Branch:** `docs/demo` · **Folder:** `demo/`
 You make sure the **live demo works in front of judges**. You run the phone and laptop during the pitch, own all physical materials, test the scanner with real paper, and can give the whole pitch if Presenter 1 can't.
 
-Read first: `docs/PROBLEM_STATEMENT.md`, `docs/TEAM_PLAN.md`, and the scanner section of `tasks/01_BACKEND.md` (B4).
+Read first: `docs/PROBLEM_STATEMENT.md`, `docs/TEAM_PLAN.md`, and the scanner section of `tasks/01_BACKEND.md` (B4). **How your part plugs into the others: `docs/INTEGRATION.md`.**
 
 ## D1 · Materials (H00–H03)
 - [ ] Confirm printer access (where, who, how to print from a laptop/phone). Test print anything

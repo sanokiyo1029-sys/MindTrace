@@ -34,13 +34,13 @@ Teacher types concepts → AI drafts MCQs (each wrong option = a known misconcep
 
 | Role | Member | Task file |
 |---|---|---|
-| Backend + integration | _TBD_ | [tasks/01_BACKEND.md](tasks/01_BACKEND.md) |
-| Frontend | _TBD_ | [tasks/02_FRONTEND.md](tasks/02_FRONTEND.md) |
-| Research + prompting | _TBD_ | [tasks/03_RESEARCH_PROMPTING.md](tasks/03_RESEARCH_PROMPTING.md) |
-| Presenter: lead speaker + deck | _TBD_ | [tasks/04_PRESENTER_LEAD.md](tasks/04_PRESENTER_LEAD.md) |
-| Presenter: live demo + QA + backup speaker | _TBD_ | [tasks/05_PRESENTER_DEMO.md](tasks/05_PRESENTER_DEMO.md) |
+| Backend + integration (leader) | Rohan ([@sanokiyo1029-sys](https://github.com/sanokiyo1029-sys)) | [tasks/01_BACKEND.md](tasks/01_BACKEND.md) |
+| Frontend | Risheeth ([@risheeth26233](https://github.com/risheeth26233)) | [tasks/02_FRONTEND.md](tasks/02_FRONTEND.md) |
+| Research & development (AI + prompting) | Samrudh ([@SamrudhNandakumar](https://github.com/SamrudhNandakumar)) | [tasks/03_RESEARCH_PROMPTING.md](tasks/03_RESEARCH_PROMPTING.md) |
+| Presenter: lead speaker + deck | Sree Athira ([@sreeathira06](https://github.com/sreeathira06)) | [tasks/04_PRESENTER_LEAD.md](tasks/04_PRESENTER_LEAD.md) |
+| Presenter: live demo + QA + backup speaker | Saniya ([@ssaniyabi](https://github.com/ssaniyabi)) | [tasks/05_PRESENTER_DEMO.md](tasks/05_PRESENTER_DEMO.md) |
 
-Plan, timeline and git workflow: [docs/TEAM_PLAN.md](docs/TEAM_PLAN.md) · Shared JSON/API contracts: [docs/CONTRACTS.md](docs/CONTRACTS.md)
+Plan, timeline and git workflow: [docs/TEAM_PLAN.md](docs/TEAM_PLAN.md) · How the parts combine: [docs/INTEGRATION.md](docs/INTEGRATION.md) · Shared JSON/API contracts: [docs/CONTRACTS.md](docs/CONTRACTS.md)
 
 ## Repo layout
 

@@ -97,11 +97,11 @@ Sample JSON for every shape lives in `tests/fixtures/` (research owns it). Front
       "confidence": 0.96,
       "fill": { "A": 0.61, "B": 0.05, "C": 0.04, "D": 0.03 },
       "final": null,
-      "crop_url": "/media/scans/sc_001_q1.png",
-      "reasoning_crop_url": "/media/scans/sc_001_q1_why.png"
+      "crop_url": "/api/media/scans/sc_001_q1.png",
+      "reasoning_crop_url": "/api/media/scans/sc_001_q1_why.png"
     }
   ],
-  "image_url": "/media/scans/sc_001.jpg",
+  "image_url": "/api/media/scans/sc_001.jpg",
   "duplicate_of": null
 }
 ```
@@ -172,6 +172,8 @@ A student can only ever see their own results. Requesting another student's → 
 ---
 
 ## API list (backend owns)
+
+All paths below are served under the **`/api`** prefix (e.g. `POST /api/assessments/generate`). Media URLs in responses already start with `/api/media/`. See `docs/INTEGRATION.md`.
 
 | Method | Path | Body / Notes | Returns |
 |---|---|---|---|

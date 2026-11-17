@@ -1,8 +1,8 @@
 # Task: Frontend
 
-**Owner:** `@________` · **Branch:** `feat/frontend` · **Folder:** `frontend/`
+**Owner:** Risheeth (`@risheeth26233`) · **Branch:** `feat/frontend` · **Folder:** `frontend/`
 
-Read first: `docs/PROBLEM_STATEMENT.md`, `docs/CONTRACTS.md`, `AGENTS.md`.
+Read first: `docs/PROBLEM_STATEMENT.md`, `docs/CONTRACTS.md`, `AGENTS.md`. **How your part plugs into the others: `docs/INTEGRATION.md`.**
 
 ## Stack
 
@@ -29,7 +29,7 @@ frontend/src/
 ### F1 · Skeleton + mock API (H00–H02)
 - [ ] Vite app, routes, simple layout with the MindTrace name
 - [ ] `api.js` with `VITE_API_URL` and a `MOCK=true` switch that returns fixture JSON (copy from `tests/fixtures/`)
-- [ ] Vite dev proxy: `/api` → backend (needed later for the HTTPS tunnel)
+- [ ] Vite dev proxy: `/api` → `http://localhost:8000` (no rewrite; backend serves under `/api`), `envDir: '..'`, and `npm run sync-fixtures` copying `../tests/fixtures/*.json` → `src/mocks/`
 
 ### F2 · Create + approve (H02–H05) → supports M1
 - [ ] NewAssessment form → `POST /assessments/generate` → loading state ("Drafting questions…")

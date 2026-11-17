@@ -2,28 +2,27 @@
 
 ## Team & roles
 
-> Leader: fill the GitHub column, then everyone opens their own task file.
+Everyone: open your task file, then read `docs/INTEGRATION.md`.
 
-| Role | GitHub | Task file | Branch |
+| Role | Member | Task file | Branch |
 |---|---|---|---|
-| Backend + integration | `@________` | [tasks/01_BACKEND.md](../tasks/01_BACKEND.md) | `feat/backend` |
-| Frontend | `@________` | [tasks/02_FRONTEND.md](../tasks/02_FRONTEND.md) | `feat/frontend` |
-| Research + prompting (AI module) | `@________` | [tasks/03_RESEARCH_PROMPTING.md](../tasks/03_RESEARCH_PROMPTING.md) | `feat/ai` |
-| Presenter 1: lead speaker + deck | `@________` | [tasks/04_PRESENTER_LEAD.md](../tasks/04_PRESENTER_LEAD.md) | `docs/pitch` |
-| Presenter 2: demo operator + QA + backup speaker | `@________` | [tasks/05_PRESENTER_DEMO.md](../tasks/05_PRESENTER_DEMO.md) | `docs/demo` |
+| Backend + integration (leader) | Rohan `@sanokiyo1029-sys` | [tasks/01_BACKEND.md](../tasks/01_BACKEND.md) | `feat/backend` |
+| Frontend | Risheeth `@risheeth26233` | [tasks/02_FRONTEND.md](../tasks/02_FRONTEND.md) | `feat/frontend` |
+| Research & development (AI module + prompting) | Samrudh `@SamrudhNandakumar` | [tasks/03_RESEARCH_PROMPTING.md](../tasks/03_RESEARCH_PROMPTING.md) | `feat/ai` |
+| Presenter 1: lead speaker + deck | Sree Athira `@sreeathira06` | [tasks/04_PRESENTER_LEAD.md](../tasks/04_PRESENTER_LEAD.md) | `docs/pitch` |
+| Presenter 2: demo operator + QA + backup speaker | Saniya `@ssaniyabi` | [tasks/05_PRESENTER_DEMO.md](../tasks/05_PRESENTER_DEMO.md) | `docs/demo` |
 
-Members: `sanokiyo1029-sys` (leader / repo owner), `sreeathira06`, `risheeth26233`, `ssaniyabi`, `SamrudhNandakumar`
-
-**Integration owner:** Backend. **Demo speaker:** Presenter 1. **Backup speaker:** Presenter 2.
+**Leader + integration owner:** Rohan. **Demo speaker:** Sree Athira. **Demo operator + backup speaker:** Saniya.
 
 ## Who owns which folder (prevents merge fights)
 
 | Folder | Owner |
 |---|---|
-| `backend/` (except `backend/app/ai/`) | Backend |
-| `backend/app/ai/`, `prompts/`, `tests/fixtures/`, `docs/misconceptions/` | Research |
-| `frontend/` | Frontend |
-| `pitch/`, `demo/`, `docs/DISCLOSURES.md` | Presenters |
+| `backend/` (except `backend/app/ai/`) | Rohan |
+| `backend/app/ai/`, `prompts/`, `tests/fixtures/`, `docs/misconceptions/` | Samrudh |
+| `frontend/` | Risheeth |
+| `pitch/` | Sree Athira |
+| `demo/`, `docs/DISCLOSURES.md` | Saniya |
 | `docs/CONTRACTS.md` | Everyone, **by PR only** |
 
 ## AI tools (3 builders have ChatGPT Plus + Claude Code)

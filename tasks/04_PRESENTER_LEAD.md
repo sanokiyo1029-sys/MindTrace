@@ -1,9 +1,9 @@
 # Task: Presenter 1 (Lead Speaker + Pitch Deck)
 
-**Owner:** `@________` · **Branch:** `docs/pitch` · **Folder:** `pitch/`
+**Owner:** Sree Athira (`@sreeathira06`) · **Branch:** `docs/pitch` · **Folder:** `pitch/`
 You are the **voice of MindTrace**. You present the problem, the story and the impact, and you handle judges' questions. Presenter 2 runs the live demo next to you and is your backup speaker.
 
-Read first: `docs/PROBLEM_STATEMENT.md` (memorise the one-liner), `docs/TEAM_PLAN.md`. Skim `docs/CONTRACTS.md` §8 so you understand the insight report.
+Read first: `docs/PROBLEM_STATEMENT.md` (memorise the one-liner), `docs/TEAM_PLAN.md`. Skim `docs/CONTRACTS.md` §8 so you understand the insight report. **How your part plugs into the others: `docs/INTEGRATION.md`.**
 
 ## P1 · Understand it (H00–H02)
 - [ ] Read the problem statement until you can explain MindTrace in **20 seconds** without notes

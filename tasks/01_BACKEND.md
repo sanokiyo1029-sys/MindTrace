@@ -1,9 +1,9 @@
 # Task: Backend + Integration Owner
 
-**Owner:** `@________` · **Branch:** `feat/backend` · **Folder:** `backend/` (not `backend/app/ai/`, that's Research)
+**Owner:** Rohan (`@sanokiyo1029-sys`) · **Branch:** `feat/backend` · **Folder:** `backend/` (not `backend/app/ai/`, that's Research)
 **You are also the integration owner:** you review and merge PRs and keep `main` runnable.
 
-Read first: `docs/PROBLEM_STATEMENT.md`, `docs/CONTRACTS.md`, `AGENTS.md`.
+Read first: `docs/PROBLEM_STATEMENT.md`, `docs/CONTRACTS.md`, `AGENTS.md`. **How your part plugs into the others: `docs/INTEGRATION.md`.**
 
 ## Stack
 
@@ -28,7 +28,7 @@ backend/
 ## Build order (each step = one PR)
 
 ### B1 · Skeleton (H00–H02)
-- [ ] FastAPI app, CORS for the Vite dev URL, `/health` → `{ok, ai_mode}`
+- [ ] FastAPI app, all routes under `/api` (`APIRouter(prefix="/api")`), CORS for the Vite dev URL, `/api/health` → `{ok, ai_mode}`, media served at `/api/media`
 - [ ] Models for everything in CONTRACTS §2–7; IDs are random short strings (`as_`, `q_`, `s_`, `sc_` prefixes)
 - [ ] `seed.py`: 1 teacher, class `cl_7a`, 5 students (+ PINs) from `tests/fixtures/roster.json`
 - [ ] Simple auth: teacher token + student token (signed JWT or random token in DB is fine)
