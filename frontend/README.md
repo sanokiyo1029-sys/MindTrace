@@ -18,7 +18,7 @@ The development server runs at `http://localhost:5173`. It proxies `/api/*` to `
 Vite reads the **repo-root `.env`** (`envDir: '..'`, see `docs/INTEGRATION.md`).
 
 - Standard teacher and student sign-in uses the backend.
-- The teacher sign-in page offers **Explore sample workspace**, which uses the labelled fictional fixture in `src/fixtures/demo.json`. Set `VITE_MOCK=false` to hide the sample entry or `VITE_MOCK=true` to open the sample by default. Sample mode leaves PDF generation and scan processing to the backend.
+- The sample workspace (labelled fixture data, no PDFs or scanning) appears only with `VITE_MOCK=true`. With it unset or `false`, everything is live.
 - `VITE_API_URL` defaults to `/api`.
 - **Server address** (Android app only): where the backend lives, saved on the device, e.g. `https://xxxx.trycloudflare.com`. The website always uses the server it was loaded from.
 - **Gemini** runs on the server (see the root `.env`: `AI_MODE=live`, `LLM_API_KEY`). The New assessment screen says whether Gemini or the labelled saved samples are in use; questions and activities are tagged "AI draft" or "Saved sample", and fallback notes show as a banner.

@@ -24,7 +24,7 @@ function App() {
   const [googleError, setGoogleError] = useState('');
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const previewAvailable = import.meta.env.VITE_MOCK !== 'false';
+  const previewAvailable = import.meta.env.VITE_MOCK === 'true'; // sample workspace only when asked for: otherwise every flow is live
 
   useEffect(() => setOnAuthLost(() => setTeacherTokenState('')), []);
 
@@ -165,7 +165,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   }
 
   function printSheets() {
-    if (isMock) return flash('PDF printing needs the MindTrace API. Sample mode does not generate question papers.', 'info');
+    if (isMock) return flash('You are in the sample workspace (fixture data). Choose Exit sample and sign in as a teacher to print real question papers.', 'info');
     // In the Android app an outside link opens in the phone's browser; on the web it opens a new tab.
     if (isNative) window.location.href = printUrl(assessment.id);
     else if (!window.open(printUrl(assessment.id), '_blank')) return flash('Allow pop-ups to open the generated PDF, then try again.');
