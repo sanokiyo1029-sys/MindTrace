@@ -5,6 +5,10 @@ Contracts: `docs/CONTRACTS.md` · How it connects: `docs/INTEGRATION.md`
 
 ## Run
 
+**Quick start:** double-click `start-backend.bat` (Windows) or run `./start-backend.sh` (Mac/Linux) from the repo root. It installs everything on the first run and opens the API docs.
+
+Manual:
+
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
