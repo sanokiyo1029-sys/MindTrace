@@ -173,4 +173,25 @@
 .answer-mark{display:block;margin-top:4px;color:#7e6951;font-weight:600}
 .practice-code{background:#fbfaf7;border:1px solid #f1ede1;border-radius:6px;padding:8px 10px;white-space:pre-wrap;margin:6px 0}
 .practice-hint{display:block;color:#7c7368;margin:4px 0}
+.exam-workspace{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.exam-panel{padding:18px}
+.exam-panel h2,.exam-panel h3{margin-top:0}
+.exam-panel p{margin:8px 0}
+.exam-row,.exam-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.exam-actions{justify-content:flex-start;margin:12px 0}
+.exam-report,.student-exams{margin:18px 0}
+.student-exam + .student-exam{margin-top:10px}
+.exam-list{list-style:none;margin:0;padding:0}
+.exam-list li{padding:11px 0;border-bottom:1px solid var(--line)}
+.exam-list li:last-child{border-bottom:0}
+.exam-list li > div{display:inline-grid;gap:3px;margin-right:14px}
+.exam-list li > button{margin-top:6px}
+.exam-marking{margin-top:8px}
+.exam-marking summary{cursor:pointer}
+.exam-mark input{max-width:130px}
+.exam-timer{position:sticky;top:0;z-index:1;padding:10px;background:var(--paper);border:1px solid var(--line);border-radius:4px;margin:10px 0}
+.exam-player{min-width:0;padding:0;border:0}
+.exam-player > legend{font-weight:700}
+.exam-response{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:700px){.exam-workspace{grid-template-columns:1fr}.exam-panel{padding:13px}}
 @media(max-width:560px){.type-editor{padding:6px 14px 4px}.match-row{grid-template-columns:1fr 1fr;gap:6px}.add-question-picker select{max-width:130px}}

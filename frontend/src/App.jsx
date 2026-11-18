@@ -1,24 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { api, demo, getServer, getStudentToken, printUrl, getTeacherId, getTeacherToken, isMock as fixtureMode, isNative, mediaUrl, onBusy, setOnAuthLost, setServer, setStudentToken, setTeacherId, setTeacherToken, store } from './api.js';
+import { api, demo, getServer, readStudentSession, printUrl, getTeacherId, getTeacherToken, isMock as fixtureMode, isNative, mediaUrl, onBusy, setOnAuthLost, setServer, setStudentToken, setTeacherId, setTeacherToken, store } from './api.js';
 import { drop, entry, flush, keepMine, outbox, queue, retryBlocked, subscribe, summary } from './offline.js';
 import { Button, PageHeading, Panel } from './ui.jsx';
 import { ClassOverview, FeedbackPage, HistoryPage, PracticePanel, RecommendationsPage, StudentReportPage, SUBJECTS, subjectName, SyncBadge } from './TeacherAreas.jsx';
 import Auth from './Auth.jsx';
 import Landing, { SiteHeader, Wordmark } from './Landing.jsx';
 import StudentHome from './StudentHome.jsx';
+import { TeacherExams } from './Exams.jsx';
 import { ClassManage, ForgotPassword, ProfilePanel, ResetPassword } from './Accounts.jsx';
 import { AddQuestion, MarkField, STARTERS, TYPE_LABELS, TypeFields, isWritten, optionsOf } from './QuestionTypes.jsx';
-import AiPage, { copyImage } from './AiPage.jsx';
+import { copyImage, openLens } from './lens.js';
 import PaperSurface from './PaperSurface.jsx';
 import Icon from './Icon.jsx';
 
-// The teacher's six areas. Question review, printing, scan review, feedback and student reports open from inside them.
+const AiPage = import.meta.env.MODE === 'android' ? null : lazy(() => import('./AiPage.jsx'));
+
+// Teacher workspace navigation. Question review, printing and individual reports open from inside it.
 const nav = [
   { to: '/workspace', label: 'Overview', icon: 'grid' }, { to: '/assessment', label: 'Create assessment', icon: 'plus' },
+  { to: '/exams', label: 'Online exams', icon: 'clock' },
   { to: '/scanner', label: 'Scan papers', icon: 'scan' }, { to: '/insights', label: 'Class insights', icon: 'chart' },
   { to: '/recommendations', label: 'Teaching recommendations', icon: 'book' }, { to: '/history', label: 'History', icon: 'clock' },
-  { to: '/ai', label: 'Gemini', icon: 'spark' },
+  ...(AiPage ? [{ to: '/ai', label: 'Gemini', icon: 'spark' }] : []),
 ];
 // After signing in, go back to the page that asked for it (e.g. /ai). Same-site paths only.
 const nextPath = () => { const n = new URLSearchParams(window.location.search).get('next') || ''; return /^\/(?!\/)[\w\-/]*$/.test(n) ? n : ''; };
@@ -30,7 +34,7 @@ const statusScreen = { draft: '/review', approved: '/print', printed: '/scanner'
 
 function App() {
   const [teacherToken, setTeacherTokenState] = useState(getTeacherToken);
-  const [studentSession, setStudentSession] = useState(() => getStudentToken() ? { role: 'student', token: getStudentToken() } : null);
+  const [studentSession, setStudentSession] = useState(readStudentSession);
   const [authNote, setAuthNote] = useState('');
   const { pathname } = useLocation();
   // Keep sample deep links available while the public landing page starts signed out.
@@ -39,11 +43,30 @@ function App() {
   const navigate = useNavigate();
 
   useEffect(() => setOnAuthLost(() => { setTeacherTokenState(''); setAuthNote(summary().total ? 'Your session ended. Sign in again: your unsynced changes are kept on this device and will sync.' : 'Your session ended. Please sign in again.'); }), []);
+  useEffect(() => {
+    const changed = event => { if (event.key === 'mt_student_session' || event.key === null) setStudentSession(readStudentSession()); };
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, []);
+  useEffect(() => {
+    if (!studentSession || studentSession.student?.id) return;
+    const { token } = studentSession;
+    let active = true;
+    const resolve = () => api.me(token).then(({ role, student }) => {
+      if (active && role === 'student' && student?.id && readStudentSession()?.token === token) {
+        setStudentToken(token, student);
+        setStudentSession({ role, student, token });
+      }
+    }).catch(() => {});
+    if (navigator.onLine) resolve();
+    window.addEventListener('online', resolve);
+    return () => { active = false; window.removeEventListener('online', resolve); };
+  }, [studentSession?.token, studentSession?.student?.id]);
 
   function startSession(session) {
     setAuthNote('');
     if (session.role === 'student') {
-      setStudentToken(session.token);
+      setStudentToken(session.token, session.student);
       setStudentSession(session);
       navigate('/student', { replace: true });
       return;
@@ -96,7 +119,8 @@ function App() {
   if (pathname === '/reset-password') return <ExperiencePage page="login"><ResetPassword /></ExperiencePage>;
   if (pathname === '/student') {
     return studentSession
-      ? <ExperiencePage page="student" onSignOut={() => signOutStudent(false)}><StudentHome token={studentSession.token} onExpired={() => signOutStudent(true)} /></ExperiencePage>
+      ? <ExperiencePage page="student" onSignOut={() => signOutStudent(false)}><StudentHome key={studentSession.token} token={studentSession.token}
+        studentId={studentSession.student?.id} onExpired={() => signOutStudent(true)} /></ExperiencePage>
       : <Navigate to="/login?role=student" replace />;
   }
   if (!sample && !teacherToken) return <Navigate to={studentSession ? '/student' : `/login?role=teacher${pathname === '/workspace' ? '' : `&next=${encodeURIComponent(pathname)}`}`} replace />;
@@ -313,6 +337,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
       <main id="main-content" tabIndex="-1" className="content" aria-busy={loading}>{storage === 'temporary' && <div className="note-banner conflict-banner" role="alert"><Icon name="shield" size={17}/><p><b>This server forgets papers and scans when it restarts.</b> It runs on free hosting without a database, so a restart (after about 15 idle minutes, or a new deploy) erases assessments, scans and photos. Connect a free database (DATABASE_URL, see docs/DEPLOY.md) before using it with a class.</p></div>}<div key={location.pathname} className="page-enter"><Routes>
         <Route path="/workspace" element={<Dashboard {...context} />} />
         <Route path="/assessment" element={<NewAssessment {...context} />} />
+        <Route path="/exams" element={<TeacherExams isMock={isMock} flash={flash} classes={classes} />} />
         <Route path="/review" element={<ReviewQuestions {...context} />} />
         <Route path="/print" element={<PrintPage {...context} />} />
         <Route path="/scanner" element={<Scanner {...context} />} />
@@ -324,13 +349,13 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
         <Route path="/history" element={<HistoryPage {...context} />} />
         <Route path="/class" element={<ClassManage {...context} />} />
         <Route path="/profile" element={<><PageHeading eyebrow="ACCOUNT" title="Your profile" description="Your name, email and password. Changing the email or password needs your current password." /><ProfilePanel flash={flash} /></>} />
-        <Route path="/ai" element={capabilities === null && !isMock ? <p role="status">Checking your account…</p>
-          : <AiPage account={capabilities?.gemini_account} flash={flash} onSignOut={onSignOut} />} />
+        {AiPage && <Route path="/ai" element={capabilities === null && !isMock ? <p role="status">Checking your account…</p>
+          : <Suspense fallback={<p role="status">Loading…</p>}><AiPage account={capabilities?.gemini_account} flash={flash} onSignOut={onSignOut} /></Suspense>} />}
         <Route path="/students/:id" element={<StudentReportPage />} />
         <Route path="*" element={<Navigate to="/workspace" replace />} />
       </Routes></div></main>
     </div>
-    <nav className="mobile-nav" aria-label="Mobile navigation">{mobileNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} aria-label={item.label} className={({ isActive }) => isActive ? 'mobile-active' : ''}><Icon name={item.icon} size={21} /><span>{{ 'Create assessment': 'Create', 'Teaching recommendations': 'Teach', 'Class insights': 'Insights', 'Scan papers': 'Scan', 'AI assistant': 'AI' }[item.label] || item.label}</span></NavLink>)}</nav>
+    <nav className="mobile-nav" aria-label="Mobile navigation">{mobileNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} aria-label={item.label} className={({ isActive }) => isActive ? 'mobile-active' : ''}><Icon name={item.icon} size={21} /><span>{{ 'Create assessment': 'Create', 'Online exams': 'Exams', 'Teaching recommendations': 'Teach', 'Class insights': 'Insights', 'Scan papers': 'Scan', 'AI assistant': 'AI' }[item.label] || item.label}</span></NavLink>)}</nav>
     {toast && <div key={toast.id} className={`toast toast-${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}><span className="toast-badge" aria-hidden="true">{toast.type === 'success' ? <Icon name="check" size={15} /> : toast.type === 'error' ? '!' : 'i'}</span><span className="toast-text">{toast.message}</span><button aria-label="Dismiss notification" onClick={() => setToast(null)}><Icon name="close" size={16} /></button>{toast.type === 'success' && <i className="wedges" aria-hidden="true"><i /></i>}</div>}
   </div>;
 }
@@ -700,8 +725,11 @@ function LensPanel({ imageUrl }) {
   async function lens() {
     setMsg('');
     if (isNative) {
-      window.location.href = 'googleapp://lens';
-      setMsg('Google Lens opens in the Google app. Point it at the paper, tap Text, copy what you need and paste it into the transcription here. If nothing opened, install or update the Google app, or open lens.google.com.');
+      try {
+        const { mode } = await openLens();
+        setMsg(mode === 'camera' ? 'Point Lens at the paper, choose Text, and paste what you copy into the transcription.'
+          : 'Google Lens opened in your browser. Upload a photo of the paper and choose Text.');
+      } catch (e) { setMsg(e.message || 'Couldn’t open Lens. Install or update the Google app.'); }
       return;
     }
     if (isPhone() && navigator.canShare) {
@@ -716,7 +744,7 @@ function LensPanel({ imageUrl }) {
       } catch (e) { if (e.name === 'AbortError') return; }
     }
     const copied = copyImage(load()); // copy inside the click, then open Lens
-    window.open('https://lens.google.com/', '_blank', 'noopener');
+    openLens();
     copied.then(() => setMsg('Photo copied. In the Google Lens tab press Ctrl+V (⌘V on Mac) to paste it, then choose Text to copy or translate.'),
       () => setMsg('Open the full photo, right-click it and choose “Search with Google Lens” (Chrome), then choose Text.'));
   }

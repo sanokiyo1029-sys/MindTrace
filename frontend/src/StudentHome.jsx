@@ -1,30 +1,35 @@
 // The signed-in student's own dashboard: latest and past assessments, their own released scanned paper,
 // teacher-approved feedback (a concept to revisit), assigned practice and progress by topic. All from their records.
 import { useEffect, useState } from 'react';
-import { api, mediaUrl, store } from './api.js';
+import { api, getServer, mediaUrl, store } from './api.js';
 import Icon from './Icon.jsx';
 import PaperSurface from './PaperSurface.jsx';
 import { VideoLink } from './TeacherAreas.jsx';
 import { MyClasses, ProfilePanel } from './Accounts.jsx';
+import StudentExams from './StudentExams.jsx';
+import StudyTools from './StudyTools.jsx';
 
 const pct = (s) => s?.total ? Math.round(s.correct / s.total * 100) : null;
 
-export default function StudentHome({ token, onExpired }) {
+export default function StudentHome({ token, studentId, onExpired }) {
   const [results, setResults] = useState(null);
   const [practice, setPractice] = useState([]);
   const [error, setError] = useState('');
   async function load() {
+    if (!navigator.onLine) { setError('Connect to load your results, practice, and profile.'); return; }
     setError('');
     try {
       const [r, p] = await Promise.all([api.studentResults(token), api.studentPractice(token)]);
       setResults(r); setPractice(p);
     } catch (e) { if (e.status === 401) onExpired(); else setError(e.message); }
   }
-  useEffect(() => { load(); }, [token]);
+  useEffect(() => {
+    load();
+    window.addEventListener('online', load);
+    return () => window.removeEventListener('online', load);
+  }, [token]);
 
-  if (error) return <section className="panel student-result-card" role="alert"><p>{error}</p><button className="button outline" onClick={load}>Try again</button></section>;
-  if (!results) return <p className="list-empty" role="status">Loading your work…</p>;
-  const all = results.assessments || [];
+  const all = results?.assessments || [];
   const released = all.filter(a => a.status !== 'awaiting_review');
   const waiting = all.filter(a => a.status === 'awaiting_review');
   const latest = released[0];
@@ -35,13 +40,18 @@ export default function StudentHome({ token, onExpired }) {
   return <>
     <header className="student-home-heading">
       <p className="landing-kicker">Your learning journey</p>
-      <h1><span className="marker-text">Hello, {results.student.display_name}!</span></h1>
+      <h1><span className="marker-text">{results ? `Hello, ${results.student.display_name}!` : 'Your learning'}</span></h1>
       <p>Every answer tells you something new. Here is what your teacher has shared with you.</p>
     </header>
-    <nav className="student-section-links" aria-label="Your dashboard">
-      <a href="#latest">Latest assessment</a><a href="#revisit">Concept to revisit</a><a href="#practice">Practice</a><a href="#progress">Progress</a><a href="#past">Past assessments</a><a href="#classes">My classes</a><a href="#profile">Profile</a>
-    </nav>
-    <div className="student-home-grid">
+    {results && <nav className="student-section-links" aria-label="Your dashboard">
+      <a href="#exams">Exams</a><a href="#study-tools">Study tools</a><a href="#latest">Latest assessment</a><a href="#revisit">Concept to revisit</a><a href="#practice">Practice</a><a href="#progress">Progress</a><a href="#past">Past assessments</a><a href="#classes">My classes</a><a href="#profile">Profile</a>
+    </nav>}
+    <StudentExams token={token} scope={studentId ? JSON.stringify([getServer() || import.meta.env.VITE_API_URL || '/api', studentId]) : ''}
+      onExpired={onExpired} />
+    <StudyTools />
+    {error && <section className="panel student-result-card" role="alert"><p>{error}</p><button className="button outline" onClick={load}>Try again</button></section>}
+    {!results && !error && <p className="list-empty" role="status">Loading your work…</p>}
+    {results && <div className="student-home-grid">
       <div className="student-home-results">
         <h2 id="latest">Latest assessment{latest ? `: ${latest.title}` : ''}</h2>
         {latest ? <AssessmentCard a={latest} token={token} open /> : <section className="panel student-result-card"><p>{waiting.length ? 'Your teacher is still checking your latest paper. Your results will appear here once they’re confirmed.' : 'Your results will appear here after your teacher shares them.'}</p></section>}
@@ -66,7 +76,7 @@ export default function StudentHome({ token, onExpired }) {
         <h2 id="profile">Profile</h2>
         <ProfilePanel token={token} />
       </div>
-    </div>
+    </div>}
   </>;
 }
 

@@ -35,8 +35,18 @@ export const setTeacherToken = (token) => { teacherToken = token; store.set('mt_
 // Who is signed in (scopes work saved on this device) and the student's own session, both kept across refreshes.
 export const getTeacherId = () => store.get('mt_teacher_id');
 export const setTeacherId = (id) => store.set('mt_teacher_id', id);
-export const getStudentToken = () => store.get('mt_student_token');
-export const setStudentToken = (token) => store.set('mt_student_token', token);
+export const readStudentSession = () => {
+  try {
+    const saved = JSON.parse(store.get('mt_student_session') || 'null');
+    if (saved?.token) return { role: 'student', ...saved };
+  } catch { /* Older sessions use the token-only key. */ }
+  const token = store.get('mt_student_token');
+  return token ? { role: 'student', token } : null;
+};
+export const setStudentToken = (token, student) => {
+  store.set('mt_student_session', token ? JSON.stringify({ token, student: student?.id ? { id: student.id } : undefined }) : '');
+  store.set('mt_student_token', '');
+};
 export const setOnAuthLost = (fn) => { onAuthLost = fn; };
 
 // How many requests are in flight; the app shows a thin loading line while any are.
@@ -53,6 +63,7 @@ async function request(path, options = {}) {
 async function send(path, options) {
   if (isNative && !getServer()) throw new Error('Set the Server address first (for example https://….trycloudflare.com).');
   const headers = new Headers(options.headers || {});
+  if (import.meta.env.MODE === 'android') headers.set('X-MindTrace-Mode', 'lens-only');
   const isSignIn = /\/login$|\/signup$|^\/auth\/google$|^\/auth\/password\//.test(path);
   const usesTeacherToken = teacherToken && !isSignIn && !headers.has('Authorization');
   if (usesTeacherToken) headers.set('Authorization', `Bearer ${teacherToken}`);
@@ -75,6 +86,9 @@ async function send(path, options) {
 }
 
 const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const studentExamRequest = (token, path, options = {}) => request(`/student/me/exams${path}`, {
+  ...options, headers: { ...options.headers, Authorization: `Bearer ${token}` },
+});
 
 export const api = {
   health: () => request('/health'),
@@ -130,6 +144,18 @@ export const api = {
   practiceStatus: (id) => request(`/assessments/${id}/practice`),
   studentPractice: (token) => request('/student/me/practice', { headers: { Authorization: `Bearer ${token}` } }),
   submitPractice: (token, id, body) => request(`/student/me/practice/${id}`, { ...json('POST', body), headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }),
+  exams: () => request('/exams'),
+  publishExam: (body) => request('/exams', json('POST', body)),
+  examReport: (id) => request(`/exams/${id}`),
+  reviewExam: (id, attempt, body) => request(`/exams/${id}/attempts/${attempt}`, json('PATCH', body)),
+  studentExams: (token) => studentExamRequest(token, ''),
+  studentExam: (token, id) => studentExamRequest(token, `/${id}`),
+  startExam: (token, id) => studentExamRequest(token, `/${id}/start`, { method: 'POST' }),
+  saveExam: (token, id, body) => studentExamRequest(token, `/${id}/attempt`, json('PUT', body)),
+  examImage: (token, url) => {
+    if (!/^\/api\/media\/questions\/q_[a-z0-9_]+\.jpg$/.test(url)) throw new Error('This question image can’t be downloaded.');
+    return request(url.slice(4), { headers: { Authorization: `Bearer ${token}` }, raw: true });
+  },
   // generic call used by the offline outbox to replay a saved change
   send: (method, path, body) => request(path, json(method, body)),
 };
