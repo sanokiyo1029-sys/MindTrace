@@ -29,7 +29,8 @@ export function ClassOverview({ classes, classId, subject, setClassId, setSubjec
   const cls = classes.find(c => c.id === classId);
   return <section className="class-overview">
     <div className="section-heading"><div><span className="eyebrow">{isMock ? 'CLASS OVERVIEW · SAMPLE DATA' : 'CLASS OVERVIEW'}</span>
-      <h2>Class {cls?.name || '…'} · {subjectName(subject)}</h2></div>
+      <h2>Class {cls?.name || '…'} · {subjectName(subject)}</h2>
+      {!isMock && <Link to="/class" className="text-link">Class & students{cls?.join_code ? ` · code ${cls.join_code}` : ''} <Icon name="arrow" size={14} /></Link>}</div>
       <div className="class-picker">
         <label className="field">Class<select value={classId} onChange={e => setClassId(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>Class {c.name}</option>)}</select></label>
         <label className="field">Subject<select value={subject} onChange={e => setSubject(e.target.value)}>{SUBJECTS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>

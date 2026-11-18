@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from './api.js';
+import { StudentSignupForm } from './Accounts.jsx';
 import Icon from './Icon.jsx';
 
 // /login signs in; /signup creates an account (Get Started). Both keep ?role= and ?next=.
@@ -35,22 +36,22 @@ export default function Auth({ signup = false, onSession, onSample, googleSignIn
             onClick={() => openMode('student', signup)}><Icon name="users" /> Student</button>
         </div>
         {signup ? (teacher ? <SignupForm onSession={onSession} serverField={serverField} /> : <>
-          <h2 className="auth-role-heading">Student account</h2>
-          <p className="auth-role-description">Your teacher creates your student account and gives you a student code and PIN.
-            Sign in with those, or enter them below and connect Google so you can use Google next time.</p>
-          <div className="student-google-link">
-            <label className="field">Student code<input autoComplete="username" value={studentCode} placeholder="e.g. 7A-01"
-              onChange={e => setStudentCode(e.target.value)} required /></label>
-            <label className="field">PIN<input type="password" inputMode="numeric" autoComplete="current-password" value={pin}
-              onChange={e => setPin(e.target.value)} required /></label>
-          </div>
-          {serverField}
+          <StudentSignupForm onSession={onSession} serverField={serverField} />
+          <details className="student-google-link-box">
+            <summary>Already have a student code and PIN from your teacher? Connect Google instead</summary>
+            <div className="student-google-link">
+              <label className="field">Student code<input autoComplete="username" value={studentCode} placeholder="e.g. 7A-01"
+                onChange={e => setStudentCode(e.target.value)} required /></label>
+              <label className="field">PIN<input type="password" inputMode="numeric" autoComplete="current-password" value={pin}
+                onChange={e => setPin(e.target.value)} required /></label>
+            </div>
+            <div className="auth-google-only">{googleSignIn({ role, signup, studentLink: { student_code: studentCode.trim(), pin: pin.trim() } })}</div>
+          </details>
         </>) : <AuthForm key={role} role={role} onSession={onSession} serverField={serverField} />}
-        <div className={linking ? 'auth-google-only' : undefined}>{googleSignIn({ role, signup,
-          studentLink: linking ? { student_code: studentCode.trim(), pin: pin.trim() } : undefined })}</div>
+        {!linking && googleSignIn({ role, signup, studentLink: undefined })}
         <p className="auth-switch">{signup
           ? <>Already have an account? <button type="button" className="text-button" onClick={() => openMode(role, false)}>Sign in</button></>
-          : <>New to MindTrace? <button type="button" className="text-button" onClick={() => openMode(role, true)}>{teacher ? 'Create a teacher account' : 'Connect a student account'}</button></>}</p>
+          : <>New to MindTrace? <button type="button" className="text-button" onClick={() => openMode(role, true)}>{teacher ? 'Create a teacher account' : 'Create a student account'}</button></>}</p>
         {onSample && role === 'teacher' && <button type="button" className="text-link sample-entry"
           onClick={onSample}>Explore sample workspace <Icon name="arrow" size={16} /></button>}
       </div>
@@ -123,14 +124,14 @@ function AuthForm({ role, onSession, serverField }) {
     setError('');
     const identity = identifier.trim();
     if (!identity || !secret) {
-      setError(teacher ? 'Enter your email and password.' : 'Enter your student code and PIN.');
+      setError(teacher ? 'Enter your email and password.' : 'Enter your student code and PIN, or your email and password.');
       return;
     }
     setLoading(true);
     try {
       const reply = teacher
         ? await api.login({ email: identity, password: secret })
-        : await api.studentLogin({ student_code: identity, pin: secret });
+        : await api.studentLogin(identity.includes('@') ? { email: identity, password: secret } : { student_code: identity, pin: secret });
       const { token } = reply;
       if (typeof token !== 'string' || !token.trim()) throw new Error('The server did not return a sign-in session.');
       const session = { role, token, teacher: reply.teacher, student: reply.student };
@@ -147,16 +148,16 @@ function AuthForm({ role, onSession, serverField }) {
     <h2 className="auth-role-heading">{teacher ? 'Welcome Back, Teacher!' : 'Welcome Back, Learner!'}</h2>
     {!teacher && <p className="auth-role-description">Your learning journey continues here.</p>}
     <form onSubmit={submit}>
-      <label className="field">{teacher ? 'Email' : 'Student code'}
+      <label className="field">{teacher ? 'Email' : 'Email or student code'}
         <input type={teacher ? 'email' : 'text'} autoComplete="username" value={identifier}
-          onChange={event => setIdentifier(event.target.value)} required placeholder={teacher ? undefined : 'e.g. 7A-01'} />
+          onChange={event => setIdentifier(event.target.value)} required placeholder={teacher ? undefined : 'you@example.com or 7A-01'} />
       </label>
       <div className="field secret-field">
-        <label htmlFor="auth-secret">{teacher ? 'Password' : 'PIN'}</label>
+        <label htmlFor="auth-secret">{teacher ? 'Password' : 'Password or PIN'}</label>
         <div>
-          <input id="auth-secret" type={showSecret ? 'text' : 'password'} inputMode={teacher ? undefined : 'numeric'}
+          <input id="auth-secret" type={showSecret ? 'text' : 'password'}
             autoComplete="current-password" value={secret} onChange={event => setSecret(event.target.value)}
-            required placeholder={teacher ? undefined : 'Enter your class PIN'} />
+            required />
           <button type="button" aria-label={`${showSecret ? 'Hide' : 'Show'} ${teacher ? 'password' : 'PIN'}`}
             onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
         </div>
@@ -167,6 +168,6 @@ function AuthForm({ role, onSession, serverField }) {
         <Icon name="arrow" size={17} /> {loading ? 'Signing in…' : 'Sign In'}
       </button>
     </form>
-    {!teacher && <div className="signup-state"><small>Your teacher provides your student code and PIN.</small></div>}
+    <p className="auth-forgot"><Link className="text-link" to="/forgot-password">Forgot your password?</Link></p>
   </>;
 }

@@ -53,7 +53,7 @@ async function request(path, options = {}) {
 async function send(path, options) {
   if (isNative && !getServer()) throw new Error('Set the Server address first (for example https://….trycloudflare.com).');
   const headers = new Headers(options.headers || {});
-  const isSignIn = /\/login$|\/signup$|^\/auth\/google$/.test(path);
+  const isSignIn = /\/login$|\/signup$|^\/auth\/google$|^\/auth\/password\//.test(path);
   const usesTeacherToken = teacherToken && !isSignIn && !headers.has('Authorization');
   if (usesTeacherToken) headers.set('Authorization', `Bearer ${teacherToken}`);
   let response;
@@ -83,6 +83,18 @@ export const api = {
   googleLogin: (body) => request('/auth/google', json('POST', body)),
   teacherSignup: (body) => request('/auth/teacher/signup', json('POST', body)),
   createClass: (body) => request('/classes', json('POST', body)),
+  // Phase 1 accounts. Student calls take the student's token explicitly (the teacher token is the default).
+  studentSignup: (body) => request('/auth/student/signup', json('POST', body)),
+  forgotPassword: (email) => request('/auth/password/forgot', json('POST', { email })),
+  resetPassword: (token, password) => request('/auth/password/reset', json('POST', { token, password })),
+  profile: (token) => request('/auth/profile', token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+  editProfile: (body, token) => request('/auth/profile', { ...json('PATCH', body), ...(token && { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }) }),
+  studentClasses: (token) => request('/student/classes', { headers: { Authorization: `Bearer ${token}` } }),
+  joinClass: (token, body) => request('/student/classes/join', { ...json('POST', body), headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }),
+  newJoinCode: (classId) => request(`/classes/${classId}/join-code`, { method: 'POST' }),
+  addStudent: (classId, body) => request(`/classes/${classId}/students`, json('POST', body)),
+  removeStudent: (classId, id) => request(`/classes/${classId}/students/${id}`, { method: 'DELETE' }),
+  resetStudent: (classId, id) => request(`/classes/${classId}/students/${id}/reset`, { method: 'POST' }),
   logout: (studentToken) => request('/auth/logout', {
     method: 'POST',
     ...(studentToken && { headers: { Authorization: `Bearer ${studentToken}` } }),

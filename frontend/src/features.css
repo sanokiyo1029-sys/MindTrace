@@ -130,3 +130,25 @@
 .lens-panel .button { justify-self: start; }
 .lens-panel small { color: var(--muted); font-size: 12px; }
 .lens-msg { margin: 0; font-size: 13px; background: #fbf6e9; border-radius: 6px; padding: 8px 10px; }
+
+/* Phase 1 accounts */
+.auth-forgot { text-align: center; margin: 10px 0 0; font-size: 13px; }
+.student-google-link-box { margin-top: 14px; font-size: 13px; }
+.student-google-link-box summary { cursor: pointer; color: var(--muted); min-height: 44px; display: flex; align-items: center; }
+.profile-panel { padding: 18px 20px; max-width: 560px; }
+.profile-panel form { display: grid; gap: 10px; }
+.profile-panel .button { justify-self: start; }
+.profile-msg { margin: 0; color: #4d6b2f; font-size: 13px; }
+.my-classes { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 6px; }
+.my-classes li { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding: 6px 0; font-size: 14px; }
+.my-classes span { color: var(--muted); }
+.join-class { display: grid; gap: 8px; }
+.join-class .button { justify-self: start; }
+.class-manage { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.join-code-card, .add-student-card { padding: 18px 20px; display: grid; gap: 10px; align-content: start; }
+.join-code { display: flex; align-items: center; gap: 10px; }
+.join-code code { font: 700 26px var(--mono); letter-spacing: 2px; }
+.add-student-card form { display: grid; gap: 8px; }
+.add-student-card .button, .join-code-card .button { justify-self: start; }
+.note-banner.issued code { font-weight: 700; }
+.roster-actions { white-space: nowrap; }

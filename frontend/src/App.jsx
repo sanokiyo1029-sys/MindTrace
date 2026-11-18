@@ -7,6 +7,7 @@ import { ClassOverview, FeedbackPage, HistoryPage, PracticePanel, Recommendation
 import Auth from './Auth.jsx';
 import Landing, { SiteHeader, Wordmark } from './Landing.jsx';
 import StudentHome from './StudentHome.jsx';
+import { ClassManage, ForgotPassword, ProfilePanel, ResetPassword } from './Accounts.jsx';
 import AiPage, { copyImage } from './AiPage.jsx';
 import PaperSurface from './PaperSurface.jsx';
 import Icon from './Icon.jsx';
@@ -20,7 +21,7 @@ const nav = [
 ];
 // After signing in, go back to the page that asked for it (e.g. /ai). Same-site paths only.
 const nextPath = () => { const n = new URLSearchParams(window.location.search).get('next') || ''; return /^\/(?!\/)[\w\-/]*$/.test(n) ? n : ''; };
-const subPages = { '/review': 'Question review', '/print': 'Print sheets', '/review-scans': 'Scan review', '/followup': 'Follow-up', '/feedback': 'Student feedback' };
+const subPages = { '/class': 'Class & students', '/profile': 'Profile', '/review': 'Question review', '/print': 'Print sheets', '/review-scans': 'Scan review', '/followup': 'Follow-up', '/feedback': 'Student feedback' };
 
 const emptyAssessment = { id: '', class_id: 'cl_7a', title: '', topic: '', concepts_text: '', status: 'draft', questions: [] };
 const statusLabel = { draft: 'Draft', approved: 'Approved', printed: 'Printed', scanning: 'Scanning', confirmed: 'Results ready' };
@@ -90,6 +91,8 @@ function App() {
         studentLink={studentLink} onSession={startSession} />}
     /></ExperiencePage>;
   }
+  if (pathname === '/forgot-password') return <ExperiencePage page="login"><ForgotPassword /></ExperiencePage>;
+  if (pathname === '/reset-password') return <ExperiencePage page="login"><ResetPassword /></ExperiencePage>;
   if (pathname === '/student') {
     return studentSession
       ? <ExperiencePage page="student" onSignOut={() => signOutStudent(false)}><StudentHome token={studentSession.token} onExpired={() => signOutStudent(true)} /></ExperiencePage>
@@ -300,7 +303,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
       <nav aria-label="Main navigation" className="side-nav">{visibleNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Icon name={item.icon} /><span>{item.label}</span>{item.to === '/assessment' && assessment.id && assessment.status === 'draft' && <i className="nav-pip" />}</NavLink>)}</nav>
       <div className="sidebar-spacer" />
       <div className="privacy-note"><span className="privacy-icon"><Icon name="shield" size={17} /></span><div><strong>Teacher-led insights</strong><p>Patterns are evidence for review, never a diagnosis.</p></div></div>
-      <button className="profile-button" onClick={() => navigate('/workspace')}><span className="avatar">{isMock?'AS':'T'}</span><span><b>{isMock?'Alex Morgan':'Teacher'}</b><small>{isMock?'Mathematics teacher':'Connected account'}</small></span><span className="profile-more">···</span></button>
+      <button className="profile-button" onClick={() => navigate('/profile')}><span className="avatar">{isMock?'AS':'T'}</span><span><b>{isMock?'Alex Morgan':'Teacher'}</b><small>{isMock?'Mathematics teacher':'Connected account'}</small></span><span className="profile-more">···</span></button>
     </aside>
     <div className="main-area">
       <header className="topbar"><button className="mobile-brand" onClick={() => navigate('/')} aria-label="MindTrace home"><Wordmark /></button><div className="crumb"><span>Workspace</span><b>/</b><strong>{visibleNav.find(n => n.to === location.pathname)?.label || subPages[location.pathname] || (location.pathname.startsWith('/students/') ? 'Student report' : 'Overview')}</strong></div><div className="top-actions">{sampleTag}{!isMock && <SyncBadge onSynced={onSynced} />}<span className="teacher-chip"><span className="avatar mini">{isMock?'AM':'T'}</span><span>{isMock?'Alex Morgan':'Teacher'}</span></span><button className="text-button" onClick={onSignOut}>{isMock ? 'Exit sample' : 'Sign out'}</button></div></header>
@@ -316,6 +319,8 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
         <Route path="/recommendations" element={<RecommendationsPage {...context} />} />
         <Route path="/feedback" element={<FeedbackPage {...context} />} />
         <Route path="/history" element={<HistoryPage {...context} />} />
+        <Route path="/class" element={<ClassManage {...context} />} />
+        <Route path="/profile" element={<><PageHeading eyebrow="ACCOUNT" title="Your profile" description="Your name, email and password. Changing the email or password needs your current password." /><ProfilePanel flash={flash} /></>} />
         <Route path="/ai" element={capabilities === null && !isMock ? <p role="status">Checking your account…</p>
           : <AiPage account={capabilities?.gemini_account} flash={flash} onSignOut={onSignOut} />} />
         <Route path="/students/:id" element={<StudentReportPage />} />

@@ -5,6 +5,7 @@ import { api, mediaUrl, store } from './api.js';
 import Icon from './Icon.jsx';
 import PaperSurface from './PaperSurface.jsx';
 import { VideoLink } from './TeacherAreas.jsx';
+import { MyClasses, ProfilePanel } from './Accounts.jsx';
 
 const pct = (s) => s?.total ? Math.round(s.correct / s.total * 100) : null;
 
@@ -38,7 +39,7 @@ export default function StudentHome({ token, onExpired }) {
       <p>Every answer tells you something new. Here is what your teacher has shared with you.</p>
     </header>
     <nav className="student-section-links" aria-label="Your dashboard">
-      <a href="#latest">Latest assessment</a><a href="#revisit">Concept to revisit</a><a href="#practice">Practice</a><a href="#progress">Progress</a><a href="#past">Past assessments</a>
+      <a href="#latest">Latest assessment</a><a href="#revisit">Concept to revisit</a><a href="#practice">Practice</a><a href="#progress">Progress</a><a href="#past">Past assessments</a><a href="#classes">My classes</a><a href="#profile">Profile</a>
     </nav>
     <div className="student-home-grid">
       <div className="student-home-results">
@@ -60,6 +61,10 @@ export default function StudentHome({ token, onExpired }) {
         <section className="panel student-result-card">{Object.keys(byTopic).length && released.length >= 2 ? <ul className="topic-progress">{Object.entries(byTopic).map(([topic, runs]) => <li key={topic}>
           <b>{topic}</b>{runs.map((r, i) => <span key={i} title={r.title}><i style={{ width: `${r.pct}%` }} />{r.pct}%</span>)}</li>)}</ul>
           : <p>Once you have done two or more checked assessments, you’ll see how each topic is going here. One quiz is just a snapshot, not a label.</p>}</section>
+        <h2 id="classes">My classes</h2>
+        <MyClasses token={token} onJoined={load} />
+        <h2 id="profile">Profile</h2>
+        <ProfilePanel token={token} />
       </div>
     </div>
   </>;
