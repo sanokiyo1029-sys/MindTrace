@@ -75,7 +75,7 @@ follow-up) stays the core. Everything below adds to it; nothing in it is removed
 |---|---|---|
 | 1 | Accounts: student sign-up with class join codes, multiple classes per student, email/password student login (code + PIN still works), password recovery (SMTP or teacher/admin reset), profile, login rate limiting; teacher roster management (codes, add/remove/reset students) | **done**: 72 backend tests pass; browser-checked sign-up, join 2nd class, email login, forgot/reset, teacher reset |
 | 2 | Question types + marking engine (auto-mark objective types, manual marking with partial credit), printable layout for the new objective types where the sheet allows | **done**: 17 types, 79 backend tests pass; browser-checked authoring, picture upload, approve, print, scan review with auto + teacher marks, results and the student view |
-| 3 | Online examinations: builder, timed player, submissions, review, publish results, reports | planned |
-| 4 | Offline examinations: service worker, IndexedDB answers, download, auto-save, sync with duplicate protection, status | planned |
-| 5 | Student learning assistant (Gemini hand-off, subject prompts, step-by-step templates) + student Lens capture → edit → ask | planned |
+| 3 | Online examinations: publish from an approved assessment, timed player, submissions, review, release and reports | **implemented locally** in `feat/online-exams` |
+| 4 | Offline examinations: download an active exam, reopen it offline, save locally, and sync safely before the server deadline | **implemented locally** in `feat/offline-exams` |
+| 5 | Student Lens capture, editable question, and hint, explanation or practice prompts on the web. Lens-only APK. | implemented |
 | 6 | Persistence + deployment: Postgres via `DATABASE_URL`, file storage, Render settings, docs | planned (needs owner's database) |
