@@ -21,6 +21,9 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
 LLM_VISION_MODEL = os.getenv("LLM_VISION_MODEL", "").strip() or LLM_MODEL
 # The AI assistant screen (text + image questions). Must be a Gemini model that accepts images, e.g. gemini-3.5-flash-lite.
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "").strip() or LLM_VISION_MODEL
+# Google account IDs manually verified by the admin for assistant access.
+GEMINI_APPROVED_GOOGLE_SUBS = set(os.getenv("GEMINI_APPROVED_GOOGLE_SUBS", "").replace(",", " ").split())
+GOOGLE_SCAN_API_KEY = os.getenv("GOOGLE_SCAN_API_KEY", "").strip()
 # Google sign-in: OAuth client ID(s) from Google Cloud, comma-separated (web now, Android later).
 GOOGLE_CLIENT_IDS = [c.strip() for c in os.getenv("GOOGLE_CLIENT_ID", "").split(",") if c.strip()]
 # Google accounts (verified emails) allowed to sign in as the demo teacher, comma-separated.

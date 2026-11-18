@@ -221,6 +221,7 @@ def test_other_teacher_cannot_reach_class_report_or_images(client):
     db.close()
     H3 = login(client, "third@mindtrace.demo", "pw999999")
     assert client.get("/api/classes/cl_7a/overview", headers=H3).status_code == 404
+    assert client.get("/api/classes/cl_7a/overview?include_understanding=true", headers=H3).status_code == 404
     assert client.get("/api/classes/cl_7a/students", headers=H3).status_code == 404
     assert client.get("/api/students/st_01/report", headers=H3).status_code == 404
     rep = client.get("/api/students/st_01/report", headers=login(client)).json()
@@ -228,6 +229,38 @@ def test_other_teacher_cannot_reach_class_report_or_images(client):
     img = next((x["image_url"] for x in rep["assessments"] if x["image_url"]), None)
     assert img and client.get(img, headers=H3).status_code == 403 and client.get(img, headers=login(client)).status_code == 200
     assert client.get("/api/media/scans/..%2Fsecret.txt", headers=H3).status_code == 404
+
+
+def test_class_understanding_uses_only_confirmed_scored_answers(client, gem):
+    H = login(client)
+    assessment, pages, _ = _mixed(client, H)
+    aid = assessment["id"]
+    first, second, written = assessment["questions"]
+    question_ids = [q["id"] for q in assessment["questions"]]
+    wrong = next(choice for choice in first["options"] if choice != first["answer"])
+    choices = [wrong, second["answer"]]
+    for i, roll in enumerate(("01", "02")):
+        gem["readings"].append(_reading(roll, question_ids, choices, "The forces balance."))
+        scan = upload(client, H, aid, photo(pages[i], choices + [""], types=TYPES, seed=i)).json()
+        if roll == "01":
+            saved = review(client, H, scan["scan_id"], confirmed=True,
+                           answers=[{"question_id": second["id"], "final": "blank"}]).json()
+            assert saved["status"] == "accepted"
+
+    url = "/api/classes/cl_7a/overview?subject=physics"
+    assert "understanding" not in client.get(url, headers=H).json()
+    url += "&include_understanding=true"
+    data = client.get(url, headers=H).json()["understanding"]
+    assert len(data["students"]) == 5 and {"student_code", "pin_hash"}.isdisjoint(data["students"][0])
+    records = [r for r in data["results"] if r["assessment_id"] == aid]
+    assert {r["student_id"] for r in records} == {"st_01"}
+    assert sum(r["answered"] for r in records) == 2 and sum(r["correct"] for r in records) == 0
+    concepts = {c["name"]: c for c in data["concepts"]}
+    assert aid in concepts[written["concept"]]["assessment_ids"]
+    mistakes = concepts[first["concept"]]["mistakes"]
+    assert any(m["stem"] == first["stem"] and m["choice"] == first["options"][wrong] for m in mistakes)
+    assert aid not in {r["assessment_id"] for r in client.get(url.replace("physics", "biology"), headers=H).json()["understanding"]["results"]}
+    assert client.get(url, headers=_student(client, "7A-01", "1111")).status_code == 401
 
 
 def test_expired_session_and_me(client, monkeypatch):

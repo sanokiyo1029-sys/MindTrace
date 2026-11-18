@@ -10,6 +10,8 @@ os.environ["DATABASE_URL"] = f"sqlite:///{Path(_tmp) / 'test.db'}"
 os.environ["MEDIA_DIR"] = str(Path(_tmp) / "media")
 os.environ["AI_MODE"] = "fixtures"
 os.environ["GOOGLE_CLIENT_ID"] = ""          # tests turn Google on themselves
+os.environ["GEMINI_APPROVED_GOOGLE_SUBS"] = ""
+os.environ["GOOGLE_SCAN_API_KEY"] = ""
 os.environ["FRONTEND_DIST"] = str(Path(_tmp) / "dist")
 (Path(_tmp) / "dist" / "assets").mkdir(parents=True)
 (Path(_tmp) / "dist" / "index.html").write_text("<!doctype html><title>MindTrace test page</title>")

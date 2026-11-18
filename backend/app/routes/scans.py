@@ -4,6 +4,7 @@ Every scan starts in needs_review: the teacher checks the student and the answer
 Scores and insights are computed later from the confirmed answers and the approved answer key (deterministic).
 """
 import threading
+from typing import Literal
 
 import cv2
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -12,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import gemini, rolls, serialize
+from app import config, gemini, rolls, serialize
 from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
@@ -20,7 +21,7 @@ from app.ids import new_id
 from app.layout import paper_code, question_types
 from app.models import Assessment, ClassRoom, Scan, Sheet, Student, Teacher
 from app.routes.common import current_scans, own_assessment, sheets_of
-from app.scanner import gemini_reader, omr, pipeline
+from app.scanner import cloud_text, gemini_reader, omr, pipeline
 from app.security import current_teacher
 
 router = APIRouter(prefix="/api", tags=["scans"])
@@ -231,6 +232,26 @@ def scan_progress(assessment_id: str, teacher: Teacher = Depends(current_teacher
             "duplicates": [serialize.scan(db, s) for s in dups],
             "rejected": [serialize.scan(db, s) for s in recent
                          if s.status == "rejected" and s.reject_reason != "discarded_by_teacher"][:5]}
+
+
+class ScanTextRequest(BaseModel):
+    target: Literal["en", "hi", "ta", "te", "kn", "ml", "bn", "mr", "ur", "es", "fr"] | None = None
+
+
+@router.post("/scans/{scan_id}/text")
+def read_scan_text(scan_id: str, body: ScanTextRequest, teacher: Teacher = Depends(current_teacher),
+                   db: Session = Depends(get_db)):
+    sc = db.get(Scan, scan_id)
+    if not sc:
+        raise api_error(404, "not_found", "Scan not found.")
+    own_assessment(db, teacher, sc.assessment_id)
+    if not config.GOOGLE_SCAN_API_KEY:
+        raise api_error(503, "scan_text_not_configured", "Google scan text isn't set up. Ask your admin to connect the Google Cloud APIs.")
+    try:
+        image = (SCAN_DIR / f"{sc.id}.jpg").read_bytes()
+    except FileNotFoundError:
+        raise api_error(404, "scan_photo_not_found", "This scan photo is unavailable. Retake the photo to read its text.") from None
+    return cloud_text.read_photo(image, body.target)
 
 
 class ReviewAnswer(BaseModel):

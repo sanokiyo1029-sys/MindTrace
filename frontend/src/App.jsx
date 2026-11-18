@@ -30,15 +30,13 @@ function App() {
   const [teacherToken, setTeacherTokenState] = useState(getTeacherToken);
   const [studentSession, setStudentSession] = useState(() => getStudentToken() ? { role: 'student', token: getStudentToken() } : null);
   const [authNote, setAuthNote] = useState('');
-  const [sample, setSample] = useState(fixtureMode);
-  const [googleError, setGoogleError] = useState('');
   const { pathname } = useLocation();
+  // Keep sample deep links available while the public landing page starts signed out.
+  const [sample, setSample] = useState(() => fixtureMode && !teacherToken && !studentSession
+    && !['/', '/login', '/student'].includes(pathname));
   const navigate = useNavigate();
-  const previewAvailable = import.meta.env.VITE_MOCK === 'true'; // sample workspace only when asked for: otherwise every flow is live
 
   useEffect(() => setOnAuthLost(() => { setTeacherTokenState(''); setAuthNote(summary().total ? 'Your session ended. Sign in again: your unsynced changes are kept on this device and will sync.' : 'Your session ended. Please sign in again.'); }), []);
-  // A token kept from an earlier visit may have expired: check it once, and learn who it belongs to.
-  useEffect(() => { if (teacherToken && !fixtureMode) api.me().then(m => m.teacher && setTeacherId(m.teacher.id)).catch(() => {}); }, []);
 
   function startSession(session) {
     setAuthNote('');
@@ -83,15 +81,13 @@ function App() {
     const home = sample || teacherToken ? '/workspace' : studentSession ? '/student' : undefined;
     return <ExperiencePage page="landing" home={home}><Landing home={home} /></ExperiencePage>;
   }
-  if (pathname === '/login') {
+  if (pathname === '/login' || pathname === '/signup') {
     return <ExperiencePage page="login"><Auth
-      onSession={startSession} note={authNote}
-      onSample={previewAvailable ? () => { setSample(true); navigate('/workspace'); } : undefined}
+      signup={pathname === '/signup'} onSession={startSession} note={authNote}
+      onSample={fixtureMode ? () => { setSample(true); navigate('/workspace'); } : undefined}
       serverField={isNative ? <ServerField /> : null}
-      googleSignIn={<>
-        <GoogleButton onToken={(token, teacher) => startSession({ role: 'teacher', token, teacher })} onError={setGoogleError} />
-        {googleError && <p className="field-error" role="alert">{googleError}</p>}
-      </>}
+      googleSignIn={({ role, signup, studentLink }) => <GoogleButton key={`${role}:${signup}`} role={role}
+        studentLink={studentLink} onSession={startSession} />}
     /></ExperiencePage>;
   }
   if (pathname === '/student') {
@@ -134,15 +130,35 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pdf, setPdf] = useState(null);
+  const [capabilities, setCapabilities] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
   const firstPage = useRef(true);
   const [classes, setClasses] = useState(() => isMock ? [{ id: 'cl_7a', name: '7A' }] : []);
+  const [classesState, setClassesState] = useState(isMock ? 'ready' : 'loading');
   const [classId, setClassIdState] = useState(() => isMock ? 'cl_7a' : store.get('mt_class'));
   const [subject, setSubjectState] = useState(() => store.get('mt_subject') || 'mathematics');
   const setClassId = (id) => { setClassIdState(id); store.set('mt_class', id); };
   const setSubject = (s) => { setSubjectState(s); store.set('mt_subject', s); };
-  useEffect(() => { if (!isMock) api.classes().then(c => { setClasses(c); if (c.length && !c.some(x => x.id === store.get('mt_class'))) setClassId(c[0].id); }).catch(() => {}); }, []);
+  function loadClasses() {
+    setClassesState('loading');
+    api.classes().then(rows => {
+      setClasses(rows);
+      if (!rows.some(row => row.id === store.get('mt_class'))) setClassId(rows[0]?.id || '');
+      setClassesState('ready');
+    }, () => setClassesState('error'));
+  }
+  useEffect(() => {
+    if (isMock) return;
+    loadClasses();
+    const refreshAccess = () => api.me().then(me => {
+      if (me.teacher?.id) setTeacherId(me.teacher.id);
+      setCapabilities(me.capabilities || {});
+    }, () => setCapabilities({}));
+    refreshAccess();
+    window.addEventListener('online', refreshAccess);
+    return () => window.removeEventListener('online', refreshAccess);
+  }, [isMock]);
   // A synced offline edit: pick up the new version so the next edit starts from it.
   function onSynced(e, result) {
     if (e.id.startsWith('question:')) setAssessment(a => ({ ...a, questions: a.questions.map(q => q.id === result.id ? { ...q, version: result.version, validation_errors: result.validation_errors } : q) }));
@@ -170,7 +186,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
       const local = outbox();
       opened.questions = opened.questions.map(q => { const e = local.find(x => x.id === `question:${q.id}`); return e ? { ...q, ...e.body } : q; });
       setAssessment(opened); setInsights(null); setPdf(null);
-      if (go) navigate(statusScreen[opened.status] || '/workspace');
+      if (go) navigate(typeof go === 'string' ? go : statusScreen[opened.status] || '/workspace');
     } catch (error) { if (!go) store.set('mt_assessment', ''); flash(error.message); }
   }
 
@@ -271,22 +287,24 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   }
 
   const sampleTag = isMock && <span className="mode-tag" title="Uses labelled fixture data"><span className="mode-dot" /> Mock mode · sample data, not live</span>;
-  const context = { classes, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock };
+  const scanText = capabilities === null && !isMock ? undefined : capabilities?.scan_text === true;
+  const context = { classes, classesState, loadClasses, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock, scanText };
 
-  const mobileNav = nav.filter(n => n.to !== '/history'); // History is linked from the Overview on phones
+  const visibleNav = nav.filter(n => n.to !== '/ai' || capabilities?.gemini_assistant === true);
+  const mobileNav = visibleNav.filter(n => n.to !== '/history'); // History is linked from the Overview on phones
   return <div className="shell workspace-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <div className={`busy-bar ${loading ? 'on' : ''}`} aria-hidden="true" />
     <aside className="sidebar">
       <Link to="/" className="brand" aria-label="MindTrace home"><Wordmark /><span className="brand-mini" aria-hidden="true">M</span></Link>
       <div className="school-label">WORKSPACE</div>
-      <nav aria-label="Main navigation" className="side-nav">{nav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Icon name={item.icon} /><span>{item.label}</span>{item.to === '/assessment' && assessment.id && assessment.status === 'draft' && <i className="nav-pip" />}</NavLink>)}</nav>
+      <nav aria-label="Main navigation" className="side-nav">{visibleNav.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/workspace'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Icon name={item.icon} /><span>{item.label}</span>{item.to === '/assessment' && assessment.id && assessment.status === 'draft' && <i className="nav-pip" />}</NavLink>)}</nav>
       <div className="sidebar-spacer" />
       <div className="privacy-note"><span className="privacy-icon"><Icon name="shield" size={17} /></span><div><strong>Teacher-led insights</strong><p>Patterns are evidence for review, never a diagnosis.</p></div></div>
       <button className="profile-button" onClick={() => navigate('/workspace')}><span className="avatar">{isMock?'AS':'T'}</span><span><b>{isMock?'Alex Morgan':'Teacher'}</b><small>{isMock?'Mathematics teacher':'Connected account'}</small></span><span className="profile-more">···</span></button>
     </aside>
     <div className="main-area">
-      <header className="topbar"><button className="mobile-brand" onClick={() => navigate('/')} aria-label="MindTrace home"><Wordmark /></button><div className="crumb"><span>Workspace</span><b>/</b><strong>{nav.find(n => n.to === location.pathname)?.label || subPages[location.pathname] || (location.pathname.startsWith('/students/') ? 'Student report' : 'Overview')}</strong></div><div className="top-actions">{sampleTag}{!isMock && <SyncBadge onSynced={onSynced} />}<span className="teacher-chip"><span className="avatar mini">{isMock?'AM':'T'}</span><span>{isMock?'Alex Morgan':'Teacher'}</span></span><button className="text-button" onClick={onSignOut}>{isMock ? 'Exit sample' : 'Sign out'}</button></div></header>
+      <header className="topbar"><button className="mobile-brand" onClick={() => navigate('/')} aria-label="MindTrace home"><Wordmark /></button><div className="crumb"><span>Workspace</span><b>/</b><strong>{visibleNav.find(n => n.to === location.pathname)?.label || subPages[location.pathname] || (location.pathname.startsWith('/students/') ? 'Student report' : 'Overview')}</strong></div><div className="top-actions">{sampleTag}{!isMock && <SyncBadge onSynced={onSynced} />}<span className="teacher-chip"><span className="avatar mini">{isMock?'AM':'T'}</span><span>{isMock?'Alex Morgan':'Teacher'}</span></span><button className="text-button" onClick={onSignOut}>{isMock ? 'Exit sample' : 'Sign out'}</button></div></header>
       <main id="main-content" tabIndex="-1" className="content" aria-busy={loading}><div key={location.pathname} className="page-enter"><Routes>
         <Route path="/workspace" element={<Dashboard {...context} />} />
         <Route path="/assessment" element={<NewAssessment {...context} />} />
@@ -299,7 +317,8 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
         <Route path="/recommendations" element={<RecommendationsPage {...context} />} />
         <Route path="/feedback" element={<FeedbackPage {...context} />} />
         <Route path="/history" element={<HistoryPage {...context} />} />
-        <Route path="/ai" element={<AiPage flash={flash} />} />
+        <Route path="/ai" element={capabilities?.gemini_assistant ? <AiPage flash={flash} />
+          : capabilities === null && !isMock ? <p role="status">Checking your access…</p> : <Navigate to="/workspace" replace />} />
         <Route path="/students/:id" element={<StudentReportPage />} />
         <Route path="*" element={<Navigate to="/workspace" replace />} />
       </Routes></div></main>
@@ -310,8 +329,8 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
 }
 
 
-// "Continue with Google". The server says whether it's on (/auth/config gives the web client ID) and checks every
-// token (linked teacher accounts only). Website: Google Identity Services popup. Android app: Google blocks its web
+// "Continue with Google". The server supplies the web client ID and checks every token. Website: Google Identity
+// Services popup. Android app: Google blocks its web
 // sign-in inside app web views, so the app uses the native account picker (Credential Manager via
 // @capgo/capacitor-social-login); its ID token is issued for the same web client ID and goes to the same /auth/google.
 const CANCELED = 'Google sign-in was canceled. Choose Continue with Google to try again.';
@@ -321,51 +340,75 @@ const loadGis = () => gisScript ||= new Promise((resolve, reject) => {
   s.onload = resolve; s.onerror = () => { gisScript = null; reject(new Error('Google sign-in could not load.')); };
   document.head.append(s);
 });
-function GoogleButton({ onToken, onError }) {
-  const slot = useRef(null); const [state, setState] = useState('off'); // off | ready | working | unavailable
+function GoogleButton({ role, studentLink, onSession }) {
+  const slot = useRef(null);
+  const active = useRef(false);
+  const working = useRef(false);
+  const [state, setState] = useState('checking');
   const [clientId, setClientId] = useState(null);
+  const [error, setError] = useState('');
+  const link = useRef(studentLink);
+  link.current = studentLink;
   const clickedAt = useRef(0);
   async function finish(credential) {
-    clickedAt.current = 0; setState('working'); onError('');
-    try { const r = await api.googleLogin({ credential }); onToken(r.token, r.teacher); }
-    catch (e) { onError(e.message); setState('ready'); }
+    if (!active.current || working.current) return;
+    if (link.current && (!link.current.student_code || !link.current.pin)) return;
+    working.current = true;
+    clickedAt.current = 0; setState('working'); setError('');
+    try {
+      const r = await api.googleLogin({ credential, role, allow_signup: role === 'teacher', student_link: link.current });
+      if (!r.token || !r[role]) throw new Error('This MindTrace server does not support Google sign-in for this role yet.');
+      if (active.current) onSession({ ...r, role });
+    } catch (e) {
+      if (active.current) { setError(e.message); setState('ready'); }
+    } finally { working.current = false; }
   }
   useEffect(() => {
     let live = true;
+    active.current = true;
     const load = () => api.authConfig().then(({ google_client_id: id }) => {
-      if (!id || !live) return;
+      if (!live) return;
+      if (!id) { setState('off'); return; }
       setClientId(id);
       if (isNative) { setState('ready'); return; }
       return loadGis().then(() => {
-        if (!live) return;
+        if (!live || !slot.current) return;
         window.google.accounts.id.initialize({ client_id: id, auto_select: false, cancel_on_tap_outside: true, context: 'signin', ux_mode: 'popup',
-          callback: ({ credential }) => finish(credential) });
-        window.google.accounts.id.renderButton(slot.current, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular', logo_alignment: 'left', width: 300,
-          click_listener: () => { clickedAt.current = Date.now(); onError(''); } });
+          callback: ({ credential }) => { if (live) finish(credential); } });
+        const width = Math.min(300, slot.current.parentElement.clientWidth);
+        slot.current.replaceChildren();
+        window.google.accounts.id.renderButton(slot.current, { type: 'standard', theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'rectangular', logo_alignment: 'left', width,
+          click_listener: () => { clickedAt.current = Date.now(); setError(''); } });
         setState('ready');
       }, () => live && setState('unavailable'));
-    }).catch(() => {}); // server unreachable: the password form shows that error on submit
+    }).catch(() => { if (live) setState('disconnected'); });
     load();
     // Google gives no "popup closed" callback. If the page gets focus back after a click and no credential follows,
     // the user closed the window or cancelled.
-    const onFocus = () => { const at = clickedAt.current; if (at && Date.now() - at > 800) setTimeout(() => { if (clickedAt.current === at) { clickedAt.current = 0; onError(CANCELED); } }, 1500); };
+    const onFocus = () => { const at = clickedAt.current; if (at && Date.now() - at > 800) setTimeout(() => { if (live && clickedAt.current === at) { clickedAt.current = 0; setError(CANCELED); } }, 1500); };
     addEventListener('focus', onFocus); addEventListener('mt-server', load); // the app's server address was just set
-    return () => { live = false; removeEventListener('focus', onFocus); removeEventListener('mt-server', load); };
+    return () => { live = false; active.current = false; removeEventListener('focus', onFocus); removeEventListener('mt-server', load); };
   }, []);
   async function nativeSignIn() {
-    setState('working'); onError('');
+    setState('working'); setError('');
     try {
       const { SocialLogin } = await import('@capgo/capacitor-social-login');
       await SocialLogin.initialize({ google: { webClientId: clientId } });
       const { result } = await SocialLogin.login({ provider: 'google', options: { scopes: ['profile', 'email'] } });
       if (!result?.idToken) throw new Error('Google didn’t return a sign-in token. Try again.');
       await finish(result.idToken);
-    } catch (e) { onError(e?.code === 'USER_CANCELLED' ? CANCELED : `Google sign-in didn’t finish: ${e?.message || 'unknown error'}`); setState('ready'); }
+    } catch (e) { if (active.current) { setError(e?.code === 'USER_CANCELLED' ? CANCELED : `Google sign-in didn’t finish: ${e?.message || 'unknown error'}`); setState('ready'); } }
   }
-  if (state === 'unavailable') return <p className="google-note">Google sign-in couldn’t load. Use your email and password.</p>;
-  return <div className="google-signin" hidden={state === 'off'}><div className="or-divider"><span>or</span></div>
-    {isNative ? <button type="button" className="button outline google-native" disabled={state === 'working'} onClick={nativeSignIn}><GoogleMark /> Continue with Google</button> : <div ref={slot} className="google-slot"/>}
-    {state === 'working' && <p className="busy-hint" role="status">Signing in with Google…</p>}</div>;
+  const ready = (state === 'ready' || state === 'working') && (!studentLink || !!(studentLink.student_code && studentLink.pin));
+  return <div className="google-signin"><div className="or-divider"><span>or</span></div>
+    {(!ready || isNative) && <button type="button" className="google-provider" disabled={!ready || state === 'working'}
+      onClick={isNative ? nativeSignIn : undefined}><GoogleMark /> Continue with Google</button>}
+    {!isNative && <div ref={slot} className="google-slot" hidden={!ready} aria-busy={state === 'working'} />}
+    {state === 'off' && <p className="google-note" role="status">Google sign-in is not configured on this server.</p>}
+    {state === 'disconnected' && <p className="google-note" role="status">Google sign-in needs a connected MindTrace server.</p>}
+    {state === 'unavailable' && <p className="google-note" role="status">Google sign-in couldn’t load. Try refreshing the page.</p>}
+    {state === 'working' && <p className="busy-hint" role="status">Signing in with Google…</p>}
+    {error && <p className="field-error" role="alert">{error}</p>}</div>;
 }
 // Google's multicolour "G" (brand mark required next to the button text).
 const GoogleMark = () => <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>;
@@ -375,22 +418,46 @@ function ServerField() {
   return <details className="server-field" open={isNative && !value}><summary>Server address <small>{value || (isNative ? 'not set' : 'this website')}</small></summary><label className="field">Address<input type="url" inputMode="url" autoCapitalize="off" spellCheck="false" placeholder="https://….trycloudflare.com" value={value} onChange={e=>{setValue(e.target.value);setServer(e.target.value);}}/><small>Leave empty on the website. In the Android app, paste the backend's https tunnel address.</small></label></details>;
 }
 
-function Dashboard({ assessment, insights, scanProgress, openAssessment, isMock, classes, classId, setClassId, subject, setSubject }) {
+// A new teacher (email or Google sign-up) starts with no classes: set up the first one here.
+function FirstClass({ onCreated }) {
+  const [name, setName] = useState(''); const [grade, setGrade] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  async function submit(e) {
+    e.preventDefault();
+    if (busy) return;
+    if (!name.trim()) return setError('Enter a class name, e.g. 7B.');
+    setBusy(true); setError('');
+    try { const c = await api.createClass({ name: name.trim(), grade: grade.trim() }); onCreated(c.id); }
+    catch (err) { setError(err.message); setBusy(false); }
+  }
+  return <form className="first-class" onSubmit={submit} noValidate>
+    <span className="eyebrow">SET UP YOUR WORKSPACE</span>
+    <h2>Create your first class</h2>
+    <p>Add a class you teach. You can add more classes later.</p>
+    <div className="field-row">
+      <label className="field">Class name<input value={name} onChange={e => setName(e.target.value)} maxLength={40} placeholder="e.g. 7B" required /></label>
+      <label className="field">Grade (optional)<input value={grade} onChange={e => setGrade(e.target.value)} maxLength={20} placeholder="e.g. 7" /></label>
+    </div>
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <Button type="submit" disabled={busy} icon="plus">{busy ? 'Creating…' : 'Create class'}</Button>
+  </form>;
+}
+
+function Dashboard({ assessment, insights, scanProgress, openAssessment, isMock, classes, classesState, loadClasses, classId, setClassId, subject, setSubject }) {
   const [list, setList] = useState(null); const [results, setResults] = useState([]);
   const shown = Array.isArray(list) ? list.filter(a => a.class_id === classId && (a.subject || 'mathematics') === subject) : [];
   const loadList = () => { setList(null); api.assessments().then(setList).catch(() => setList('error')); };
   useEffect(() => { if (!isMock) loadList(); }, []);
   useEffect(() => { if (!isMock && assessment.id) api.results(assessment.id).then(setResults).catch(() => setResults([])); }, [assessment.id, assessment.status]);
   insights = insights || { papers: { verified: scanProgress.accepted, printed: scanProgress.total }, misconceptions: [], questions: [] };
-  const metrics = [
-    { label: 'Papers checked', value: insights.papers.verified, note: `of ${insights.papers.printed} distributed`, icon: 'book' },
-    { label: 'Questions', value: assessment.questions.length, note: assessment.status==='draft'?'draft for review':'teacher approved', icon: 'check' },
-    { label: 'Patterns to review', value: insights.misconceptions.length, note: 'possible misconceptions', icon: 'chart' },
-  ];
   return <>
     <div className="welcome-band"><div className="welcome-copy"><span className="welcome-kicker"><span className="live-dot" /> YOUR CLASSROOM, IN FOCUS</span><h1>{isMock?'Good morning, Alex.':'Welcome to your workspace.'}</h1><p>See what your students may be thinking — and where to go next.</p><Link to="/assessment" className="button button-light"><Icon name="plus" size={17} /> Create an assessment <Icon name="arrow" size={17} /></Link></div><div className="welcome-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="art-card card-back">⅓ + ⅓<div className="art-lines"/></div><div className="art-card card-front"><span>{isMock?'CLASS SIGNAL':'PAPER → INSIGHT'}</span><b>{isMock?'2/6':'MAP'}</b><i>{isMock?'3 students chose this':'Teacher-led learning'}</i></div><span className="art-spark spark-one"/><span className="art-spark spark-two"/></div></div>
-    {isMock ? <div className="metric-grid">{metrics.map((m, i) => <Panel key={m.label} className="metric"><div className={`metric-icon tone-${i}`}><Icon name={m.icon} /></div><div><span className="metric-label">{m.label}</span><strong>{m.value}</strong><small>{m.note}</small></div><span className="metric-index">0{i + 1}</span></Panel>)}</div>
-      : classId ? <ClassOverview classes={classes} classId={classId} subject={subject} setClassId={setClassId} setSubject={setSubject} /> : <Panel className="class-overview"><p className="list-empty" role="status">{classes.length ? 'Choose a class.' : 'Loading your classes…'}</p></Panel>}
+    {classesState === 'ready' && classId ? <ClassOverview key={`${classId}:${subject}`} classes={classes} classId={classId} subject={subject}
+      setClassId={setClassId} setSubject={setSubject} isMock={isMock} openAssessment={openAssessment} />
+      : <Panel className="class-overview">{classesState === 'error'
+        ? <p className="list-empty" role="alert">Couldn’t load your classes. <button className="text-button" onClick={loadClasses}>Try again</button></p>
+        : classesState === 'loading' ? <p className="list-empty" role="status">Loading your classes…</p>
+          : <FirstClass onCreated={id => { setClassId(id); loadClasses(); }} />}
+      </Panel>}
     <div className="dashboard-grid"><Panel className="workflow-panel" interactive><div className="section-heading"><div><span className="eyebrow">YOUR WORKFLOW</span><h2>{assessment.id ? assessment.title : 'Start your first assessment'}</h2><p>{assessment.id ? `Class ${classes.find(c => c.id === assessment.class_id)?.name || ''} · ${subjectName(assessment.subject)} · ${assessment.topic || 'Lesson'}` : 'Create a short check-in from the concepts you just taught.'}</p></div><span className={`status-pill ${assessment.status==='confirmed'?'status-complete':'status-draft'}`}><span/>{assessment.id ? (assessment.status==='confirmed'?'Results ready':assessment.status.replaceAll('_',' ')) : 'Not started'}</span></div>{assessment.id?<div className="stepper">{[{n:'01',label:'Create'},{n:'02',label:'Review'},{n:'03',label:'Print'},{n:'04',label:'Scan'},{n:'05',label:'Understand'}].map((s,i)=>{const stage={draft:1,approved:2,printed:3,scanning:4,confirmed:5}[assessment.status]||1;return <div key={s.label} className={`step ${i<stage?'done':''} ${i===stage?'current':''}`}><span className="step-node">{i<stage?<Icon name="check" size={14}/>:s.n}</span><div className="step-line"/><small>{s.label}</small></div>})}</div>:<Link to="/assessment" className="empty-dashboard-link">Build a check-in from today's lesson <Icon name="arrow" size={16}/></Link>}<div className="progress-footer"><div><span>Scans confirmed</span><strong>{scanProgress.accepted} <small>/ {scanProgress.total}</small></strong></div><div className="progress-track"><span style={{width:`${scanProgress.total ? scanProgress.accepted / scanProgress.total * 100 : 0}%`}}/></div><Link to="/insights" className="text-link">View class insights <Icon name="arrow" size={16}/></Link></div></Panel>
       {insights?.misconceptions?.length?<Panel className="signal-panel"><div className="section-heading"><div><span className="eyebrow">A PATTERN TO EXPLORE</span><h2>{insights.misconceptions[0].label}</h2></div><span className="signal-icon"><Icon name="arrow" size={16}/></span></div><div className="signal-quote"><span className="quote-mark">“</span><p>{assessment.questions.find(q=>q.id===insights.misconceptions[0].evidence[0]?.question_id)?.stem || 'A shared answer pattern appeared.'}</p><div className="answer-line"><span className="answer-chip">{assessment.questions.find(q=>q.id===insights.misconceptions[0].evidence[0]?.question_id)?.options?.[insights.misconceptions[0].evidence[0]?.option] || insights.misconceptions[0].evidence[0]?.option}</span><span className="answer-meter"><i style={{width:`${insights.papers.verified ? insights.misconceptions[0].students_affected/insights.papers.verified*100:0}%`}}/></span><b>{insights.misconceptions[0].students_affected} of {insights.papers.verified}</b></div></div><p className="signal-copy">{insights.misconceptions[0].why_we_think_so}</p><Link to="/insights" className="text-link">Explore the evidence <Icon name="arrow" size={16}/></Link></Panel>:<Panel className="signal-panel"><div className="section-heading"><div><span className="eyebrow">YOUR NEXT STEP</span><h2>See a clearer picture</h2></div><span className="signal-icon"><Icon name="chart" size={16}/></span></div><p className="signal-copy">Once papers are scanned and confirmed, MindTrace will show the response patterns and the evidence behind them here.</p><Link to="/scanner" className="text-link">Open classroom scanner <Icon name="arrow" size={16}/></Link></Panel>}</div>
     {!isMock&&<div className="dashboard-lists">
@@ -519,7 +586,7 @@ function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
   async function send(file) { if (await upload(file, roll)) setRoll(''); }
   async function capture() { const v=videoRef.current; if(!v?.videoWidth) return; setCapturing(true); const c=document.createElement('canvas'); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); c.toBlob(async blob=>{ if(blob) await send(new File([blob],`mindtrace-scan-${Date.now()}.jpg`,{type:'image/jpeg'})); setCapturing(false); },'image/jpeg',0.9); }
   const recent = (scanProgress.scans || []).slice(0, 5);
-  return <><PageHeading eyebrow="CLASSROOM SCANNER" title="Bring the paper back to life." description="Photograph each completed paper. Gemini reads the roll number and answers; you check every paper before it counts." action={<span className="status-pill status-draft"><span/> {assessment.title || 'No assessment open'}</span>}/>
+  return <><PageHeading eyebrow="CLASSROOM SCANNER" title="Bring the paper back to life." description="Capture or upload a paper, then open the review queue to check answers, read text, or translate it." action={<span className="status-pill status-draft"><span/> {assessment.title || 'No assessment open'}</span>}/>
   <div className="scan-stats"><div><span>Confirmed</span><b>{scanProgress.accepted} <small>/ {scanProgress.total}</small></b></div><div><span>To check</span><b className="amber-text">{scanProgress.needs_review}</b></div><div><span>Not scanned</span><b>{scanProgress.remaining}</b></div><Link to="/review-scans" className="text-link">Review queue <Icon name="arrow" size={16}/></Link></div>
   <div className="scanner-layout"><Panel className="camera-panel"><div className="camera-head"><div><span className="eyebrow">LIVE CAPTURE</span><h2>{assessment.title||'No assessment open'}</h2></div><span className={`camera-state ${started?'camera-on':''}`}><i/>{started?'Camera ready':'Camera off'}</span></div>
     <div className={`camera-view ${started?'has-camera':''}`}>{started?<video ref={videoRef} autoPlay playsInline muted aria-label="Live camera preview of the paper"/>:<div className="camera-placeholder"><div className="camera-frame"><span/><span/><span/><span/><div className="camera-sheet"><div className="sheet-line long"/><div className="sheet-line"/><div className="bubble-row"><i/><i/><i/><i/></div><div className="sheet-line long"/><div className="sheet-line short"/></div></div><b>Fit the whole page in the frame</b><small>Include the roll-number boxes at the top. Flat, well lit, in focus.</small></div>}<div className="guide-frame" aria-hidden="true"><i/><i/><i/><i/></div></div>
@@ -532,7 +599,7 @@ function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
     <Panel className="recent-scans"><div className="recent-heading"><b>Recent papers</b><Link to="/review-scans">Review queue</Link></div>{isMock?<div className="scan-empty"><span className="empty-ring"><Icon name="scan"/></span><b>Sample mode is on</b><p>Live scans appear when the API is connected.</p></div>:recent.length?<ul className="scan-list">{recent.map(s=><li key={s.scan_id}><b>{s.student?`${s.student.roll_no} · ${s.student.display_name}`:`Roll ${s.roll_number?.read||'?'} · not matched`}</b><span className={`status-pill ${s.status==='accepted'?'status-complete':'status-draft'}`}><span/>{s.status==='accepted'?'Confirmed':'To check'}</span></li>)}</ul>:<div className="scan-empty"><span className="empty-ring"><Icon name="clock"/></span><b>Ready for the first paper</b><p>Scanned papers will appear here.</p></div>}</Panel></aside></div></>;
 }
 
-function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans, busy, isMock }) {
+function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans, busy, isMock, scanText }) {
   const roster = useRoster(assessment.class_id, isMock) || [];
   const waiting = [...(scanProgress.scans || []).filter(s => s.status === 'needs_review'), ...(scanProgress.duplicates || [])];
   const clear = waiting.filter(s => s.status === 'needs_review' && s.student && !s.warnings.length && s.answers.every(a => a.final));
@@ -541,12 +608,12 @@ function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans
   const canConfirm = !isMock && scanProgress.needs_review === 0 && assessment.id;
   return <><PageHeading eyebrow="SCAN REVIEW" title="Check each paper." description="Confirm the student and the answers. Nothing counts towards scores or insights until you do." action={<span className="status-pill status-draft"><span/>{waiting.length} to check</span>}/>
   {clear.length>0&&<div className="note-banner bulk-banner" role="status"><Icon name="check" size={17}/><p>{clear.length} paper{clear.length===1?' has':'s have'} a matched student, no warnings and clear answers.</p><Button variant="outline" disabled={bulk} aria-busy={bulk} onClick={confirmClear}>{bulk?'Confirming…':`Confirm ${clear.length} clear`}</Button></div>}
-  {waiting.length ? waiting.map(scan => <ScanReviewCard key={scan.scan_id} scan={scan} reviewScan={reviewScan} assessment={assessment} roster={roster}/>) : <Panel className="empty-review"><span className="empty-ring"><Icon name={isMock?'clock':'check'} size={22}/></span><h2>{isMock?'Sample mode has no live scans.':'Nothing to check.'}</h2><p>{isMock?'Connect the MindTrace API to scan real papers. The class insights shown in sample mode come from the labelled fixture.':'Scanned papers wait here until you confirm the student and answers.'}</p><Link className="button outline" to="/scanner">Back to scanner</Link></Panel>}
+  {waiting.length ? waiting.map(scan => <ScanReviewCard key={scan.scan_id} scan={scan} reviewScan={reviewScan} assessment={assessment} roster={roster} scanText={scanText}/>) : <Panel className="empty-review"><span className="empty-ring"><Icon name={isMock?'clock':'check'} size={22}/></span><h2>{isMock?'Sample mode has no live scans.':'Nothing to check.'}</h2><p>{isMock?'Connect the MindTrace API to scan real papers. The class insights shown in sample mode come from the labelled fixture.':'Scanned papers wait here until you confirm the student and answers.'}</p><Link className="button outline" to="/scanner">Back to scanner</Link></Panel>}
   <Panel className="review-policy"><Icon name="shield"/><span><b>You confirm every paper</b><small>Scores and insights use only confirmed answers and your approved answer key.</small></span><Button variant="outline" disabled={!canConfirm||busy} aria-busy={busy} onClick={()=>canConfirm?confirmScans():flash(isMock?'Sample mode does not submit or confirm fixture scans.':'Check every paper before confirming results.', 'info')}>{busy?'Confirming…':'Confirm results'}</Button></Panel></>;
 }
 
 const textStateWord = { clear: 'Read clearly', unclear: 'Unclear handwriting: check every word', missing: 'Nothing written', not_read: 'Not read automatically: type it from the photo', teacher: 'Corrected by you' };
-function ScanReviewCard({ scan, reviewScan, assessment, roster }) {
+function ScanReviewCard({ scan, reviewScan, assessment, roster, scanText }) {
   useOutboxTick();
   const saved = entry(`scan:${scan.scan_id}`); // an edit kept on this device (offline, or waiting to sync)
   const fromSaved = (qid, key) => saved?.body?.answers?.find(a => a.question_id === qid)?.[key];
@@ -566,6 +633,7 @@ function ScanReviewCard({ scan, reviewScan, assessment, roster }) {
   return <Panel className="scan-review-card"><div className="scan-review-head"><div><span className="eyebrow">ROLL {scan.roll_number?.read || '—'} · {sourceText[scan.extracted_by] || 'Scanned paper'}</span><h2>{scan.student ? `${scan.student.display_name}` : 'Who is this?'}</h2></div><span className={`status-pill ${dup?'status-fixture':'status-draft'}`}><span/>{dup?'Already confirmed':'To check'}</span></div>
     {saved&&<p className={`sync-chip sync-${saved.status}`} role="status">{syncWord[saved.status]}{saved.status==='conflict'?': this paper was changed elsewhere. Reload the queue to see the newer version, then apply your change.':''}{saved.error&&saved.status!=='conflict'?` (${saved.error})`:''}</p>}
     {scan.warnings.length>0&&<ul className="scan-warnings">{scan.warnings.map(w=><li key={w.code}>{w.message}</li>)}</ul>}
+    {scan.image_url && <ScanTextPreview scanId={scan.scan_id} enabled={scanText} />}
     <div className="scan-review-body">
       {scan.image_url&&<a className="scan-photo" href={mediaUrl(scan.image_url)} target="_blank" rel="noreferrer"><img src={mediaUrl(scan.image_url)} alt={`Photo of the paper, roll ${scan.roll_number?.read||'unknown'}`} loading="lazy"/><small>Open full photo</small></a>}
       <div className="scan-review-fields">
@@ -579,6 +647,49 @@ function ScanReviewCard({ scan, reviewScan, assessment, roster }) {
     </div>
     <div className="scan-review-actions"><Button onClick={()=>act('confirm')} disabled={!!saving||!studentId||missing>0} aria-busy={saving==='confirm'} icon="check">{saving==='confirm'?'Confirming…':dup?'Replace confirmed paper':'Confirm paper'}</Button><Button variant="outline" onClick={()=>act('draft')} disabled={!!saving||dup}>{saving==='draft'?'Saving…':'Save changes'}</Button><Button variant="outline" onClick={()=>act('discard')} disabled={!!saving}>{saving==='discard'?'Discarding…':'Discard photo'}</Button>{(!studentId||missing>0)&&<small className="disabled-hint">{!studentId?'Choose the student first.':`Choose ${missing} flagged answer${missing===1?'':'s'}.`}</small>}</div>
   </Panel>;
+}
+
+const scanLanguages = { en: 'English', hi: 'Hindi', ta: 'Tamil', te: 'Telugu', kn: 'Kannada', ml: 'Malayalam',
+  bn: 'Bengali', mr: 'Marathi', ur: 'Urdu', es: 'Spanish', fr: 'French' };
+
+function ScanTextPreview({ scanId, enabled }) {
+  const [target, setTarget] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [reading, setReading] = useState(false);
+
+  async function read() {
+    setReading(true);
+    setError('');
+    setResult(null);
+    try {
+      setResult({ ...await api.scanText(scanId, target), target });
+    } catch (e) {
+      setError(e.offline ? 'Text recognition and translation need an internet connection. Try again when connected.' : e.message);
+    } finally {
+      setReading(false);
+    }
+  }
+
+  return <details className="scan-text-preview">
+    <summary>Read or translate text</summary>
+    {!enabled ? <p>{enabled === undefined ? 'Checking availability…' : 'Cloud text recognition is unavailable. You can still transcribe from the photo.'}</p> : <>
+      <p>This sends the scan photo to Google Cloud Vision. Compare the recognized text with the original before using it.</p>
+      <div className="scan-text-controls">
+        <label className="field">Output language<select value={target} disabled={reading} onChange={e => setTarget(e.target.value)}>
+          <option value="">Original text</option>
+          {Object.entries(scanLanguages).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+        </select></label>
+        <Button variant="outline" disabled={reading} onClick={read}>{target ? 'Read and translate' : 'Read text'}</Button>
+      </div>
+      {reading && <p role="status">Reading the paper…</p>}
+      {error && <p className="field-error" role="alert">{error}</p>}
+      {result?.text && <label className="field">Recognized text<textarea rows="4" readOnly value={result.text} /></label>}
+      {result && !result.text && <p role="status">No readable text found. Try a sharper photo.</p>}
+      {result?.translation && <label className="field">{scanLanguages[result.target]} translation<textarea rows="4" readOnly value={result.translation} /></label>}
+      {result?.translation_error && <p className="field-error" role="alert">{result.translation_error}</p>}
+    </>}
+  </details>;
 }
 
 function InsightsPage({ assessment, insights, loadInsights, busy, isMock }) {

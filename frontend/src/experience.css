@@ -245,8 +245,7 @@
 .connection-settings small { font-size: 12px; }
 .signup-state { margin-top: 14px; display: grid; gap: 2px; justify-items: center; color: var(--muted); }
 .signup-state small { font-size: 12px; }
-.signup-state .text-button { color: var(--muted); text-decoration: line-through; }
-.signup-state .text-button:disabled { opacity: .85; }
+.signup-state .text-button { min-height: 44px; color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
 .sample-entry { margin: 4px auto -5px; justify-content: center; padding-inline: 7px; }
 
 .pointer-card { position: relative; isolation: isolate; transition: translate var(--motion-card) var(--motion-ease), box-shadow var(--motion-card); }

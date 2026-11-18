@@ -53,7 +53,7 @@ async function request(path, options = {}) {
 async function send(path, options) {
   if (isNative && !getServer()) throw new Error('Set the Server address first (for example https://….trycloudflare.com).');
   const headers = new Headers(options.headers || {});
-  const isSignIn = /\/login$|^\/auth\/google$/.test(path);
+  const isSignIn = /\/login$|\/signup$|^\/auth\/google$/.test(path);
   const usesTeacherToken = teacherToken && !isSignIn && !headers.has('Authorization');
   if (usesTeacherToken) headers.set('Authorization', `Bearer ${teacherToken}`);
   let response;
@@ -81,6 +81,8 @@ export const api = {
   login: (body) => request('/auth/teacher/login', json('POST', body)),
   authConfig: () => request('/auth/config'),
   googleLogin: (body) => request('/auth/google', json('POST', body)),
+  teacherSignup: (body) => request('/auth/teacher/signup', json('POST', body)),
+  createClass: (body) => request('/classes', json('POST', body)),
   logout: (studentToken) => request('/auth/logout', {
     method: 'POST',
     ...(studentToken && { headers: { Authorization: `Bearer ${studentToken}` } }),
@@ -96,6 +98,7 @@ export const api = {
   scans: (id) => request(`/assessments/${id}/scans`),
   uploadScan: (id, file, rollNumber) => { const form = new FormData(); form.append('image', file); if (rollNumber?.trim()) form.append('roll_number', rollNumber.trim()); return request(`/assessments/${id}/scans`, { method: 'POST', body: form }); },
   reviewScan: (id, body) => request(`/scans/${id}/review`, json('PATCH', body)),
+  scanText: (id, target) => request(`/scans/${id}/text`, json('POST', { target: target || null })),
   confirm: (id) => request(`/assessments/${id}/confirm`, { method: 'POST' }),
   insights: (id) => request(`/assessments/${id}/insights`),
   followup: (id, body) => request(`/assessments/${id}/followup`, json('POST', body)),
@@ -103,7 +106,7 @@ export const api = {
   studentResults: (token) => request('/student/me/results', { headers: { Authorization: `Bearer ${token}` } }),
   me: (token) => request('/auth/me', token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
   printPdf: (id) => request(`/assessments/${id}/print`, { raw: true }),
-  overview: (classId, subject) => request(`/classes/${classId}/overview?subject=${encodeURIComponent(subject)}`),
+  overview: (classId, subject, understanding = false) => request(`/classes/${classId}/overview?subject=${encodeURIComponent(subject)}${understanding ? '&include_understanding=true' : ''}`),
   studentReport: (id) => request(`/students/${id}/report`),
   addQuestion: (id, body) => request(`/assessments/${id}/questions`, json('POST', body)),
   feedback: (id) => request(`/assessments/${id}/feedback`),

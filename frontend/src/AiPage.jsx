@@ -1,5 +1,5 @@
 // AI assistant: ask Gemini about text and/or one photo or screenshot. The server holds the Gemini key; this screen only
-// needs the teacher's MindTrace session (password or Continue with Google). Same code on the website and in the app.
+// uses the teacher's approved Google sign-in session. Same code on the website and in the app.
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import Icon from './Icon.jsx';
@@ -28,11 +28,9 @@ export default function AiPage({ flash }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState(null); // { message, retry: action | null }
   const [replies, setReplies] = useState([]);
-  const [gemini, setGemini] = useState(null);
   const fileRef = useRef(null);
   const sending = useRef(false); // blocks a second request while one is loading (double taps too)
 
-  useEffect(() => { api.health().then(h => setGemini(Boolean(h.gemini)), () => setGemini(null)); }, []);
   useEffect(() => () => { if (image) URL.revokeObjectURL(image.url); }, [image]);
 
   function attach(file) {
@@ -70,7 +68,6 @@ export default function AiPage({ flash }) {
   return <>
     <PageHeading eyebrow="AI ASSISTANT · GEMINI" title="Ask about a lesson, a photo or a screenshot."
       description="Type a question, attach an image, or both. Answers are drafts for you to check, never facts about a student." />
-    {gemini === false && <div className="note-banner" role="status"><Icon name="shield" size={17} /><p>Gemini isn’t set up on this server yet, so questions will fail. The admin adds the Gemini API key on the server (LLM_API_KEY, AI_MODE=live).</p></div>}
     <Panel className="ai-panel">
       <div className="ai-actions" role="group" aria-label="Quick actions">
         <button type="button" disabled={!!busy || !image} onClick={() => send('extract')}><Icon name="book" size={16} /> Extract text</button>

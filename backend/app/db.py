@@ -32,7 +32,9 @@ def init_db():
 # Columns added for the roll-number + Gemini scanning workflow. create_all() makes them in NEW databases;
 # migrate() adds them to databases created before (idempotent, runs at every start).
 _NEW_COLUMNS = {
-    "students": {"roll_no": "VARCHAR"},
+    "teachers": {"google_sub": "VARCHAR"},
+    "students": {"roll_no": "VARCHAR", "google_sub": "VARCHAR"},
+    "tokens": {"google_subject": "VARCHAR"},
     "scans": {"roll_number": "VARCHAR", "extracted_by": "VARCHAR", "identity": "JSON", "warnings": "JSON",
               "version": "INTEGER DEFAULT 1"},
     "assessments": {"subject": "VARCHAR DEFAULT 'mathematics'", "plan": "JSON"},
@@ -53,6 +55,8 @@ def migrate():
             for name, sqltype in cols.items():
                 if name not in have:
                     con.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}"))
+        con.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_teachers_google_sub ON teachers (google_sub)"))
+        con.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_students_google_sub ON students (google_sub)"))
         # Backfill roll numbers from the login code ("7A-01" -> "01"); keep the full code if that would clash.
         rows = con.execute(text("SELECT id, class_id, student_code, roll_no FROM students")).all()
         taken = defaultdict(set)

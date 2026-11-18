@@ -1,4 +1,4 @@
-"""AI assistant: a signed-in teacher (password or "Continue with Google") asks Gemini about text and/or one image.
+"""AI assistant for teachers signed in with an approved Google account.
 
 The Gemini key stays on the server (LLM_API_KEY); the website and the Android app both call this route with the
 MindTrace session token, so the same verified sign-in protects both. Images and prompts are user content: the model is
@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app import config, gemini
 from app.errors import api_error
-from app.models import Teacher
-from app.security import current_teacher
+from app.models import AuthToken
+from app.security import current_session, gemini_approved
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -45,7 +45,14 @@ def image_type(data: bytes) -> str | None:
 
 @router.post("/ask")
 def ask(prompt: str = Form(""), action: str = Form("ask"), image: UploadFile | None = File(None),
-        teacher: Teacher = Depends(current_teacher)):
+        session: AuthToken = Depends(current_session)):
+    if session.role != "teacher":
+        raise api_error(401, "unauthorized", "Sign in as a teacher.")
+    if not gemini_approved(session):
+        raise api_error(403, "ai_access_required", "Sign in with the Google account your admin approved for Gemini.")
+    if not gemini.enabled():
+        raise api_error(503, "ai_not_configured", "Gemini isn't set up on this server yet. Ask the admin to add the "
+                                                  "Gemini API key (LLM_API_KEY) and set AI_MODE=live.")
     if action not in ACTIONS:
         raise api_error(400, "bad_action", "Choose Ask, Extract text, Summarize or Describe image.")
     prompt = prompt.strip()
@@ -63,9 +70,6 @@ def ask(prompt: str = Form(""), action: str = Form("ask"), image: UploadFile | N
         raise api_error(400, "image_required", "Attach a photo or screenshot first.")
     if not prompt and data is None:
         raise api_error(400, "empty_request", "Type a question or attach an image.")
-    if not gemini.enabled():
-        raise api_error(503, "ai_not_configured", "Gemini isn't set up on this server yet. Ask the admin to add the "
-                                                  "Gemini API key (LLM_API_KEY) and set AI_MODE=live.")
     text = "\n\n".join(x for x in (ACTIONS[action], f"Teacher's question:\n{prompt}" if prompt else "") if x)
     try:
         reply = gemini.ask(SYSTEM, text or "Describe this image.", None, 0.2 if action == "extract" else 0.5,

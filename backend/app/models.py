@@ -17,6 +17,7 @@ class Teacher(Base):
     email: Mapped[str] = mapped_column(String, unique=True)
     name: Mapped[str] = mapped_column(String)
     password_hash: Mapped[str] = mapped_column(String)
+    google_sub: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class ClassRoom(Base):
@@ -38,6 +39,7 @@ class Student(Base):
     # unique within a class only, so two classes can both have roll "01".
     roll_no: Mapped[str | None] = mapped_column(String, nullable=True)
     pin_hash: Mapped[str] = mapped_column(String)
+    google_sub: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class Assessment(Base):
@@ -96,6 +98,7 @@ class AuthToken(Base):
     token: Mapped[str] = mapped_column(String, primary_key=True)
     role: Mapped[str] = mapped_column(String)              # teacher|student
     subject_id: Mapped[str] = mapped_column(String)
+    google_subject: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

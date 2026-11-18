@@ -23,11 +23,16 @@ def check_secret(secret: str, stored: str) -> bool:
     return hmac.compare_digest(hash_secret(secret, salt), stored)
 
 
-def issue_token(db: Session, role: str, subject_id: str) -> str:
+def issue_token(db: Session, role: str, subject_id: str, *, google_subject: str | None = None) -> str:
     tok = secrets.token_urlsafe(24)
-    db.add(AuthToken(token=tok, role=role, subject_id=subject_id))
+    db.add(AuthToken(token=tok, role=role, subject_id=subject_id, google_subject=google_subject))
     db.commit()
     return tok
+
+
+def gemini_approved(session: AuthToken) -> bool:
+    # ponytail: admin-managed list, update it when a subscription lapses. OAuth exposes no plan status.
+    return session.role == "teacher" and session.google_subject in config.GEMINI_APPROVED_GOOGLE_SUBS
 
 
 # HTTPBearer (not a raw Header) so /docs shows an Authorize button; same "Authorization: Bearer" header

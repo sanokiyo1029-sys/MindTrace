@@ -10,5 +10,6 @@ import './styles.css';
 import './paper.css';
 import './experience.css';
 import './features.css';
+import './landing.css';
 
 createRoot(document.getElementById('root')).render(<React.StrictMode><BrowserRouter><App /></BrowserRouter></React.StrictMode>);

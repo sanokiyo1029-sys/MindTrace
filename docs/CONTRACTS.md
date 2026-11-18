@@ -255,6 +255,7 @@ Everything above still holds. Older MCQ-only assessments and scans need no chang
 - `PUT /assessments/{id}/plan/{misconception_id}` `{title, minutes, steps, video_url, status: planned|dismissed, note}` → the assessment's `plan`.
 - `POST /assessments/{id}/assign` (approved only) and `GET /assessments/{id}/practice` → submission status per student.
 - `GET /classes/{id}/overview?subject=` → `{class, subject, student_count, assessment_count, topics, needs_review, concept_coverage, history}`.
+- `GET /classes/{id}/overview?subject=…&include_understanding=true` adds teacher-only `understanding` with `students` (id, display name, roll number), `concepts` (name, topic, assessment IDs, up to three observed wrong answer choices), and `results` (correct and answered counts per student, concept, and assessment). Drafts, pending/replaced scans and ungraded written answers contribute no scores. A teacher-confirmed blank MCQ counts as incorrect.
 - `GET /students/{id}/report` → one student's papers (teacher of that class only; others 404).
 
 **Student**
@@ -263,9 +264,21 @@ Everything above still holds. Older MCQ-only assessments and scans need no chang
 
 **Auth**
 - `GET /auth/me` → `{role, teacher}` or `{role, student}`. Sessions expire after `SESSION_HOURS` (default 168) → 401 `session_expired`.
+- Teacher sessions include `capabilities: {gemini_assistant, scan_text}`. The Gemini assistant requires sign-in with a Google account manually approved by the admin (`GEMINI_APPROVED_GOOGLE_SUBS`, verified Google subject identifiers) and an enabled server Gemini API. Google Sign-In doesn't return subscription status. Scan text is available to teachers whenever `GOOGLE_SCAN_API_KEY` is set.
+- `POST /auth/google` also accepts `allow_signup: true`. A new verified Google identity gets a separate teacher account with no classes, keyed by the verified Google subject identifier. If that email belongs to an existing Google signup with a different subject, the API returns 409 `google_account_conflict`. Existing email-based teacher links require a Gmail or Google Workspace identity.
+- `POST /auth/google` with `role: "student"` links the verified Google identity to an existing student using `student_link: {student_code, pin}`. Subsequent requests can omit `student_link`. Returns `{token, student}` with a student-only session. A Google identity and student can each have one student link.
 
 **AI assistant (website and Android app)**
-- `POST /ai/ask` (teacher session: password or Continue with Google), multipart: `prompt` (≤ 4000 chars), `action` (`ask` | `extract` | `summarize` | `describe`), optional `image` (JPG, PNG, WebP or HEIC, ≤ 10 MB, checked by file signature). → `{text, truncated, action, model}`.
-- Errors: 400 `empty_request` | `image_required` | `bad_action`, 413 `image_too_large` | `prompt_too_long`, 415 `unsupported_image`, 503 `ai_not_configured`, 429 `ai_quota`, 503 `ai_unavailable`, 504 `ai_timeout`, 422 `ai_blocked`. Each error has `retryable` (true when trying again can help).
+- `POST /ai/ask` (approved Google teacher session), multipart: `prompt` (≤ 4000 chars), `action` (`ask` | `extract` | `summarize` | `describe`), optional `image` (JPG, PNG, WebP or HEIC, ≤ 10 MB, checked by file signature). → `{text, truncated, action, model}`.
+- Errors: 403 `ai_access_required`, 400 `empty_request` | `image_required` | `bad_action`, 413 `image_too_large` | `prompt_too_long`, 415 `unsupported_image`, 503 `ai_not_configured`, 429 `ai_quota`, 503 `ai_unavailable`, 504 `ai_timeout`, 422 `ai_blocked`. Gemini request errors include `retryable`.
 - Model: `GEMINI_CHAT_MODEL` (default `LLM_VISION_MODEL`, then `LLM_MODEL`, then `gemini-3.5-flash-lite`). The key stays on the server (`LLM_API_KEY`). `GET /health` adds `gemini` (true when Gemini calls are on).
 - Google sign-in in the Android app uses the native account picker and posts its ID token to the same `POST /auth/google` (audience = the web client ID).
+
+**Scan text preview**
+- `POST /scans/{scan_id}/text` (owning teacher), JSON `{target?: string | null}` → `{text, translation, translation_error}`. Omit `target` for OCR only. Available targets are `en`, `hi`, `ta`, `te`, `kn`, `ml`, `bn`, `mr`, `ur`, `es`, and `fr`.
+- The server sends the stored photo to Cloud Vision for document OCR, then sends detected text to Cloud Translation only if requested. An empty scan returns empty text, and a translation failure preserves the OCR text. Preview text isn't saved to the scan or used for grading.
+
+**Accounts (email + password sign-up)**
+- `POST /auth/teacher/signup` `{name, email, password}` → `{token, teacher}`. Password: 8+ characters with letters and numbers. Errors: 400 `bad_name` | `bad_email` | `weak_password`, 409 `email_taken`. The new teacher starts with no classes.
+- `POST /classes` `{name, grade?}` (teacher) → `{id, name, grade}`; 409 `class_exists` for a duplicate name in the same workspace.
+- Website: `/login` signs in, `/signup` creates an account (Get Started).

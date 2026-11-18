@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import serialize
 from app.db import get_db
 from app.errors import api_error
+from app.ids import new_id
 from app.models import Assessment, ClassRoom, Student, Teacher
 from app.security import current_teacher
 
@@ -15,6 +17,25 @@ router = APIRouter(prefix="/api/classes", tags=["classes"])
 def list_classes(teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
     rows = db.scalars(select(ClassRoom).where(ClassRoom.teacher_id == teacher.id))
     return [{"id": c.id, "name": c.name, "grade": c.grade} for c in rows]
+
+
+class NewClass(BaseModel):
+    name: str = Field(min_length=1, max_length=40)   # e.g. "7B"
+    grade: str = Field("", max_length=20)
+
+
+@router.post("")
+def create_class(body: NewClass, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
+    """A teacher (e.g. one who just signed up) adds a class to their own workspace."""
+    name = " ".join(body.name.split())
+    if not name:
+        raise api_error(400, "bad_class_name", "Enter a class name, e.g. 7B.")
+    if db.scalar(select(ClassRoom).where(ClassRoom.teacher_id == teacher.id, ClassRoom.name == name)):
+        raise api_error(409, "class_exists", f"You already have a class called {name}.")
+    c = ClassRoom(id=new_id("cl"), teacher_id=teacher.id, name=name, grade=body.grade.strip() or "7")
+    db.add(c)
+    db.commit()
+    return {"id": c.id, "name": c.name, "grade": c.grade}
 
 
 @router.get("/{class_id}/students")
@@ -32,10 +53,12 @@ def _own_class(db: Session, teacher: Teacher, class_id: str) -> ClassRoom:
 
 
 @router.get("/{class_id}/overview")
-def overview(class_id: str, subject: str = "mathematics", teacher: Teacher = Depends(current_teacher),
+def overview(class_id: str, subject: str = "mathematics", include_understanding: bool = False,
+             teacher: Teacher = Depends(current_teacher),
              db: Session = Depends(get_db)):
     """Live counts for one class and subject, from its own records only."""
-    from app import ai_bridge
+    from app import ai_bridge, class_understanding
+    from app.models import Sheet
     from app.routes.assessments import score
     from app.routes.common import current_scans
 
@@ -43,6 +66,14 @@ def overview(class_id: str, subject: str = "mathematics", teacher: Teacher = Dep
     subject = ai_bridge.subject_of(subject)
     rows = list(db.scalars(select(Assessment).where(Assessment.class_id == c.id).order_by(Assessment.created_at)))
     rows = [a for a in rows if (a.subject or "mathematics") == subject]
+    students = list(db.scalars(select(Student).where(Student.class_id == c.id).order_by(Student.roll_no, Student.student_code)))
+    if include_understanding:
+        students_by_sheet = dict(db.execute(select(Sheet.sheet_id, Sheet.student_id)
+                                            .join(Assessment, Sheet.assessment_id == Assessment.id)
+                                            .join(Student, Sheet.student_id == Student.id)
+                                            .where(Assessment.class_id == c.id, Student.class_id == c.id)).all())
+        map_concepts, map_results = {}, []
+        library = ai_bridge.misconception_library(subject)
     coverage: dict[str, dict] = {}
     history, needs_review = [], 0
     for a in rows:
@@ -50,6 +81,8 @@ def overview(class_id: str, subject: str = "mathematics", teacher: Teacher = Dep
         scans = current_scans(db, a.id)
         needs_review += sum(1 for s in scans if s.status == "needs_review")
         accepted = [s for s in scans if s.status == "accepted"]
+        if include_understanding:
+            class_understanding.add_assessment(map_concepts, map_results, a, qs, accepted, students_by_sheet, library)
         got = [score(qs, s.answers) for s in accepted]
         pct = round(100 * sum(g[0] for g in got) / sum(g[1] for g in got)) if got and sum(g[1] for g in got) else None
         concepts = {}
@@ -71,12 +104,21 @@ def overview(class_id: str, subject: str = "mathematics", teacher: Teacher = Dep
                         "created_at": a.created_at.isoformat(), "parent_assessment_id": a.parent_assessment_id,
                         "questions": len(qs), "verified": len(accepted), "score_pct": pct,
                         "concepts": {k: round(100 * v[0] / v[1]) for k, v in concepts.items() if v[1]}})
-    students = db.scalars(select(Student).where(Student.class_id == c.id))
-    return {"class": {"id": c.id, "name": c.name, "grade": c.grade}, "subject": subject,
-            "student_count": len(list(students)), "assessment_count": len(rows),
-            "topics": sorted({a.topic for a in rows}), "needs_review": needs_review,
-            "concept_coverage": sorted(coverage.values(), key=lambda v: v["concept"]),
-            "history": list(reversed(history))}
+    result = {"class": {"id": c.id, "name": c.name, "grade": c.grade}, "subject": subject,
+              "student_count": len(students), "assessment_count": len(rows),
+              "topics": sorted({a.topic for a in rows}), "needs_review": needs_review,
+              "concept_coverage": sorted(coverage.values(), key=lambda v: v["concept"]),
+              "history": list(reversed(history))}
+    if include_understanding:
+        for concept in map_concepts.values():
+            observed = (mistake for mistake in concept["mistakes"].values() if mistake["count"])
+            concept["mistakes"] = sorted(observed, key=lambda mistake: -mistake["count"])[:3]
+        result["understanding"] = {
+            "students": [{"id": s.id, "display_name": s.display_name, "roll_no": s.roll_no} for s in students],
+            "concepts": list(map_concepts.values()),
+            "results": map_results,
+        }
+    return result
 
 
 student_router = APIRouter(prefix="/api/students", tags=["classes"])

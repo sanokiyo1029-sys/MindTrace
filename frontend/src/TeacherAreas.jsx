@@ -6,6 +6,8 @@ import { api, mediaUrl } from './api.js';
 import { flush, outbox, retryBlocked, subscribe, summary } from './offline.js';
 import Icon from './Icon.jsx';
 import { Button, PageHeading, Panel } from './ui.jsx';
+import ClassUnderstanding from './ClassUnderstanding.jsx';
+import { sampleOverview } from './sampleUnderstanding.js';
 
 export const SUBJECTS = [['mathematics', 'Mathematics'], ['physics', 'Physics'], ['chemistry', 'Chemistry'],
   ['biology', 'Biology'], ['engineering', 'Engineering'], ['technology', 'Technology']];
@@ -22,12 +24,11 @@ const Loading = ({ what }) => <p className="list-empty" role="status">Loading {w
 const Failed = ({ what, retry }) => <p className="list-empty" role="alert">Couldn’t load {what}. <button className="text-button" onClick={retry}>Try again</button></p>;
 
 // ------------------------------------------------------------------ class + subject picker and overview
-export function ClassOverview({ classes, classId, subject, setClassId, setSubject }) {
-  const [ov, reload] = useLoad(() => api.overview(classId, subject), [classId, subject]);
-  const [roster] = useLoad(() => api.students(classId), [classId]);
+export function ClassOverview({ classes, classId, subject, setClassId, setSubject, isMock, openAssessment }) {
+  const [ov, reload] = useLoad(() => isMock ? Promise.resolve(sampleOverview(subject)) : api.overview(classId, subject, true), [classId, subject, isMock]);
   const cls = classes.find(c => c.id === classId);
-  return <Panel className="class-overview">
-    <div className="section-heading"><div><span className="eyebrow">CLASS OVERVIEW · LIVE</span>
+  return <section className="class-overview">
+    <div className="section-heading"><div><span className="eyebrow">{isMock ? 'CLASS OVERVIEW · SAMPLE DATA' : 'CLASS OVERVIEW'}</span>
       <h2>Class {cls?.name || '…'} · {subjectName(subject)}</h2></div>
       <div className="class-picker">
         <label className="field">Class<select value={classId} onChange={e => setClassId(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>Class {c.name}</option>)}</select></label>
@@ -40,20 +41,10 @@ export function ClassOverview({ classes, classId, subject, setClassId, setSubjec
         <div><b>{ov.student_count}</b><span>students</span></div>
         <div className={ov.needs_review ? 'needs' : ''}><b>{ov.needs_review}</b><span>papers to review</span>{ov.needs_review > 0 && <Link to="/review-scans" className="text-link">Review</Link>}</div>
       </div>
-      {ov.topics.length > 0 && <p className="overview-topics">Topics: {ov.topics.join(', ')}</p>}
-      <h3 className="overview-sub">Concept coverage</h3>
-      {ov.concept_coverage.length ? <ul className="coverage-list">{ov.concept_coverage.map(c => {
-        const pct = c.answered ? Math.round(c.correct / c.answered * 100) : null;
-        return <li key={c.concept}><span>{c.concept}<small>{c.questions} question{c.questions === 1 ? '' : 's'}</small></span>
-          <span className="coverage-meter" aria-hidden="true"><i style={{ width: `${pct ?? 0}%` }} /></span>
-          <b>{pct === null ? 'not scanned yet' : `${pct}% correct`}</b></li>;
-      })}</ul> : <p className="list-empty">No {subjectName(subject)} assessments for this class yet. <Link to="/assessment" className="text-link">Create one</Link></p>}
+      {ov.understanding ? <ClassUnderstanding data={ov.understanding} history={ov.history}
+        isMock={isMock} openAssessment={openAssessment} /> : <p className="list-empty">Concept evidence is unavailable on this server.</p>}
     </>}
-    <h3 className="overview-sub">Students</h3>
-    {roster === null ? <Loading what="the class list" /> : roster === 'error' ? <p className="list-empty">Couldn’t load the class list.</p> : roster.length ?
-      <div className="roster-links">{roster.map(s => <Link key={s.id} to={`/students/${s.id}`}><span className="roster-roll">{s.roll_no}</span>{s.display_name}<Icon name="arrow" size={14} /></Link>)}</div>
-      : <p className="list-empty">No students in this class yet.</p>}
-  </Panel>;
+  </section>;
 }
 
 // ------------------------------------------------------------------ history
