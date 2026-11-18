@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app import serialize
 from app.db import get_db
 from app.errors import api_error
-from app.ids import new_id
+from app.ids import join_code, new_id
 from app.models import Assessment, ClassRoom, Student, Teacher
 from app.security import current_teacher
 
@@ -16,7 +16,11 @@ router = APIRouter(prefix="/api/classes", tags=["classes"])
 @router.get("")
 def list_classes(teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
     rows = db.scalars(select(ClassRoom).where(ClassRoom.teacher_id == teacher.id))
-    return [{"id": c.id, "name": c.name, "grade": c.grade} for c in rows]
+    return [_class_out(c) for c in rows]
+
+
+def _class_out(c: ClassRoom) -> dict:
+    return {"id": c.id, "name": c.name, "grade": c.grade, "join_code": c.join_code}
 
 
 class NewClass(BaseModel):
@@ -35,7 +39,7 @@ def create_class(body: NewClass, teacher: Teacher = Depends(current_teacher), db
     c = ClassRoom(id=new_id("cl"), teacher_id=teacher.id, name=name, grade=body.grade.strip() or "7")
     db.add(c)
     db.commit()
-    return {"id": c.id, "name": c.name, "grade": c.grade}
+    return _class_out(c)
 
 
 @router.get("/{class_id}/students")
@@ -43,6 +47,77 @@ def list_students(class_id: str, teacher: Teacher = Depends(current_teacher), db
     _own_class(db, teacher, class_id)
     rows = db.scalars(select(Student).where(Student.class_id == class_id).order_by(Student.roll_no, Student.student_code))
     return [serialize.student(s) for s in rows]
+
+
+@router.post("/{class_id}/join-code")
+def new_join_code(class_id: str, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
+    """Replace the class code (e.g. if it was shared too widely). Students already in the class stay."""
+    c = _own_class(db, teacher, class_id)
+    c.join_code = join_code()
+    db.commit()
+    return _class_out(c)
+
+
+class NewStudent(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+    roll_no: str = Field(max_length=20)
+
+
+@router.post("/{class_id}/students")
+def add_student(class_id: str, body: NewStudent, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
+    """Teacher adds a student. The new login code and PIN are returned once, to hand to the student."""
+    from app.routes.accounts import _clean_roll, enroll
+    c = _own_class(db, teacher, class_id)
+    name = " ".join(body.display_name.split())
+    if not name:
+        raise api_error(400, "bad_name", "Enter the student's name.")
+    s, pin = enroll(db, c, name, _clean_roll(body.roll_no))
+    db.commit()
+    return {**serialize.student(s), "pin": pin}
+
+
+def _class_student(db: Session, teacher: Teacher, class_id: str, student_id: str) -> Student:
+    _own_class(db, teacher, class_id)
+    s = db.get(Student, student_id)
+    if not s or s.class_id != class_id:
+        raise api_error(404, "not_found", "Student not found in this class.")
+    return s
+
+
+@router.delete("/{class_id}/students/{student_id}")
+def remove_student(class_id: str, student_id: str, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
+    """Only students with no papers yet: results and scans are never deleted by removing someone from the list."""
+    from app.models import AuthToken, Sheet
+    s = _class_student(db, teacher, class_id, student_id)
+    if db.scalar(select(Sheet).where(Sheet.student_id == s.id)):
+        raise api_error(409, "has_papers", f"{s.display_name} already has papers in this class, so they can't be "
+                                           "removed. Their results stay in your reports.")
+    db.query(AuthToken).filter(AuthToken.subject_id == s.id).delete()
+    db.delete(s)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{class_id}/students/{student_id}/reset")
+def reset_student(class_id: str, student_id: str, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
+    """New PIN for the code + PIN login, and a temporary password if the student has their own account.
+    Both are shown once; the student's other sessions end."""
+    import secrets as _s
+    from app.models import StudentAccount
+    from app.security import end_sessions, hash_secret
+    s = _class_student(db, teacher, class_id, student_id)
+    pin = f"{_s.randbelow(10000):04d}"
+    s.pin_hash = hash_secret(pin)
+    end_sessions(db, s.id)
+    out = {"student_code": s.student_code, "pin": pin, "temporary_password": None}
+    acc = db.get(StudentAccount, s.account_id) if s.account_id else None
+    if acc:
+        temp = "mt-" + _s.token_urlsafe(6) + "7"
+        acc.password_hash = hash_secret(temp)
+        end_sessions(db, acc.id)
+        out["temporary_password"] = temp
+    db.commit()
+    return out
 
 
 def _own_class(db: Session, teacher: Teacher, class_id: str) -> ClassRoom:

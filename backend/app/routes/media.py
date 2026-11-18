@@ -4,12 +4,13 @@ import re
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
-from app.models import Assessment, AuthToken, ClassRoom, Scan, Sheet
+from app.models import Assessment, AuthToken, ClassRoom, Scan, Sheet, Student
 from app.routes.student import released
 from app.security import current_session
 
@@ -29,7 +30,8 @@ def scan_image(name: str, session: AuthToken = Depends(current_session), db: Ses
         allowed = db.get(ClassRoom, a.class_id).teacher_id == session.subject_id
     else:
         sheet = db.get(Sheet, sc.sheet_id) if sc.sheet_id else None
-        allowed = bool(sheet) and sheet.student_id == session.subject_id and sc.is_current and released(a, sc)
+        mine = {session.subject_id} | {s.id for s in db.scalars(select(Student).where(Student.account_id == session.subject_id))}
+        allowed = bool(sheet) and sheet.student_id in mine and sc.is_current and released(a, sc)
     if not allowed:
         raise api_error(403, "forbidden", "You can't open this image.")
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})

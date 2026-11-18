@@ -5,6 +5,7 @@ from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+from app.ids import join_code
 
 
 def _now():
@@ -26,6 +27,7 @@ class ClassRoom(Base):
     teacher_id: Mapped[str] = mapped_column(ForeignKey("teachers.id"))
     name: Mapped[str] = mapped_column(String)          # e.g. "7A"
     grade: Mapped[str] = mapped_column(String, default="7")
+    join_code: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, default=join_code)  # students join with this
 
 
 class Student(Base):
@@ -40,6 +42,28 @@ class Student(Base):
     roll_no: Mapped[str | None] = mapped_column(String, nullable=True)
     pin_hash: Mapped[str] = mapped_column(String)
     google_sub: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The student's own account (email + password), when they registered themselves. One account can be enrolled in
+    # several classes: each enrollment is a row here, with its own roll number for that class's papers.
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("student_accounts.id"), nullable=True, index=True)
+
+
+class StudentAccount(Base):
+    __tablename__ = "student_accounts"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    email: Mapped[str] = mapped_column(String, unique=True)
+    name: Mapped[str] = mapped_column(String)
+    password_hash: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PasswordReset(Base):
+    """One-time reset link. Only the SHA-256 of the token is stored."""
+    __tablename__ = "password_resets"
+    token_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    kind: Mapped[str] = mapped_column(String)          # teacher | student_account
+    subject_id: Mapped[str] = mapped_column(String)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Assessment(Base):

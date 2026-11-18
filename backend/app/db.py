@@ -33,7 +33,8 @@ def init_db():
 # migrate() adds them to databases created before (idempotent, runs at every start).
 _NEW_COLUMNS = {
     "teachers": {"google_sub": "VARCHAR"},
-    "students": {"roll_no": "VARCHAR", "google_sub": "VARCHAR"},
+    "students": {"roll_no": "VARCHAR", "google_sub": "VARCHAR", "account_id": "VARCHAR"},
+    "classes": {"join_code": "VARCHAR"},
     "tokens": {"google_subject": "VARCHAR"},
     "scans": {"roll_number": "VARCHAR", "extracted_by": "VARCHAR", "identity": "JSON", "warnings": "JSON",
               "version": "INTEGER DEFAULT 1"},
@@ -57,6 +58,11 @@ def migrate():
                     con.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}"))
         con.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_teachers_google_sub ON teachers (google_sub)"))
         con.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_students_google_sub ON students (google_sub)"))
+        # Every class gets a join code (students register with it); unique across the school.
+        from app.ids import join_code
+        for (cid,) in con.execute(text("SELECT id FROM classes WHERE join_code IS NULL")).all():
+            con.execute(text("UPDATE classes SET join_code = :c WHERE id = :i"), {"c": join_code(), "i": cid})
+        con.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_classes_join_code ON classes (join_code)"))
         # Backfill roll numbers from the login code ("7A-01" -> "01"); keep the full code if that would clash.
         rows = con.execute(text("SELECT id, class_id, student_code, roll_no FROM students")).all()
         taken = defaultdict(set)

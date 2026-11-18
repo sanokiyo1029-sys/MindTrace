@@ -16,8 +16,10 @@ from app import config, gemini, serialize
 from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
-from app.models import AuthToken, Student, Teacher
-from app.security import bearer, check_secret, current_session, hash_secret, issue_token
+from app.models import AuthToken, Student, StudentAccount, Teacher
+from app.routes.accounts import account_login, email_taken, password_problem
+from app.security import (bearer, check_secret, check_throttle, clear_failures, current_session, hash_secret,
+                          issue_token, record_failure)
 from app.seed import TEACHER_EMAIL
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -29,15 +31,21 @@ class TeacherLogin(BaseModel):
 
 
 class StudentLogin(BaseModel):
-    student_code: str
-    pin: str
+    student_code: str = ""   # teacher-given code + PIN...
+    pin: str = ""
+    email: str = ""          # ...or the student's own account
+    password: str = ""
 
 
 @router.post("/teacher/login")
 def teacher_login(body: TeacherLogin, db: Session = Depends(get_db)):
+    key = f"teacher:{body.email.strip().lower()}"
+    check_throttle(key)
     t = db.scalar(select(Teacher).where(Teacher.email == body.email.strip().lower()))
     if not t or not check_secret(body.password, t.password_hash):
+        record_failure(key)
         raise api_error(401, "bad_login", "Wrong email or password.")
+    clear_failures(key)
     return {"token": issue_token(db, "teacher", t.id), "teacher": {"id": t.id, "name": t.name, "email": t.email}}
 
 
@@ -59,9 +67,9 @@ def teacher_signup(body: TeacherSignup, db: Session = Depends(get_db)):
         raise api_error(400, "bad_name", "Enter your name.")
     if not EMAIL_RE.match(email):
         raise api_error(400, "bad_email", "Enter a valid email address.")
-    if len(body.password) < 8 or body.password.isdigit() or body.password.isalpha():
-        raise api_error(400, "weak_password", "Use at least 8 characters, with letters and numbers.")
-    if db.scalar(select(Teacher).where(Teacher.email == email)):
+    if problem := password_problem(body.password):
+        raise api_error(400, "weak_password", problem)
+    if email_taken(db, email):
         raise api_error(409, "email_taken", "An account with this email already exists. Sign in instead.")
     t = Teacher(id=new_id("t"), email=email, name=name, password_hash=hash_secret(body.password))
     db.add(t)
@@ -169,9 +177,13 @@ def logout(creds: HTTPAuthorizationCredentials | None = Depends(bearer), db: Ses
 
 
 def _student_credentials(db: Session, body: StudentLogin) -> Student:
+    key = f"code:{body.student_code.strip().upper()}"
+    check_throttle(key)  # a 4-digit PIN is cheap to guess without this
     s = db.scalar(select(Student).where(Student.student_code == body.student_code.strip().upper()))
     if not s or not check_secret(body.pin.strip(), s.pin_hash):
+        record_failure(key)
         raise api_error(401, "bad_login", "Wrong student code or PIN.")
+    clear_failures(key)
     return s
 
 
@@ -203,6 +215,8 @@ def _google_student(db: Session, subject: str, credentials: StudentLogin | None)
 
 @router.post("/student/login")
 def student_login(body: StudentLogin, db: Session = Depends(get_db)):
+    if body.email:
+        return account_login(db, body.email, body.password)
     s = _student_credentials(db, body)
     return {"token": issue_token(db, "student", s.id), "student": serialize.student(s)}
 
@@ -215,4 +229,7 @@ def me(session: AuthToken = Depends(current_session), db: Session = Depends(get_
         return {"role": "teacher", "teacher": {"id": t.id, "name": t.name, "email": t.email},
                 # Gemini opens in the teacher's own Google account (no MindTrace key), so it needs a Google sign-in.
                 "capabilities": {"gemini_account": t.email if session.google_subject else None}}
+    acc = db.get(StudentAccount, session.subject_id)
+    if acc:
+        return {"role": "student", "student": {"id": acc.id, "display_name": acc.name, "email": acc.email}}
     return {"role": "student", "student": serialize.student(db.get(Student, session.subject_id))}

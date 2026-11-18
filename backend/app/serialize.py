@@ -24,7 +24,7 @@ def assessment(db: Session, a: Assessment) -> dict:
 
 def student(s: Student) -> dict:
     return {"id": s.id, "class_id": s.class_id, "display_name": s.display_name, "student_code": s.student_code,
-            "roll_no": s.roll_no}
+            "roll_no": s.roll_no, "has_account": bool(s.account_id)}
 
 
 def scan(db: Session, sc: Scan) -> dict:

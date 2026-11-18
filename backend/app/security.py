@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import config
@@ -75,3 +76,46 @@ def current_teacher(creds: HTTPAuthorizationCredentials | None = Depends(bearer)
 def current_student(creds: HTTPAuthorizationCredentials | None = Depends(bearer), token: str | None = Query(default=None),
                     db: Session = Depends(get_db)) -> Student:
     return db.get(Student, _lookup(db, _token_from(creds, token), "student"))
+
+
+def current_enrollments(session: AuthToken = Depends(current_session), db: Session = Depends(get_db)) -> list[Student]:
+    """The signed-in student's class enrollments. A student ACCOUNT (email + password) may be in several classes;
+    an old-style code + PIN session is exactly one enrollment."""
+    from app.models import StudentAccount
+    if session.role != "student":
+        raise HTTPException(401, detail={"error": "unauthorized", "message": "Please log in as a student."})
+    if db.get(StudentAccount, session.subject_id):
+        return list(db.scalars(select(Student).where(Student.account_id == session.subject_id)))
+    s = db.get(Student, session.subject_id)
+    if not s:
+        raise HTTPException(401, detail={"error": "unauthorized", "message": "Please log in again."})
+    return [s]
+
+
+def end_sessions(db: Session, subject_id: str):
+    """Sign a person out everywhere (after a password change or reset)."""
+    db.query(AuthToken).filter(AuthToken.subject_id == subject_id).delete()
+
+
+# ponytail: in-memory, per process. Fine for one Render instance; move to the database if it ever runs on several.
+_FAILS: dict[str, list[float]] = {}
+MAX_FAILS, WINDOW = 5, 600.0
+
+
+def check_throttle(key: str):
+    import time
+    now = time.monotonic()
+    recent = [t for t in _FAILS.get(key, []) if now - t < WINDOW]
+    _FAILS[key] = recent
+    if len(recent) >= MAX_FAILS:
+        raise HTTPException(429, detail={"error": "too_many_attempts",
+                                         "message": "Too many wrong attempts. Wait 10 minutes and try again."})
+
+
+def record_failure(key: str):
+    import time
+    _FAILS.setdefault(key, []).append(time.monotonic())
+
+
+def clear_failures(key: str):
+    _FAILS.pop(key, None)

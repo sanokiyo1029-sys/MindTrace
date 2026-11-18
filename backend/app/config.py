@@ -28,6 +28,16 @@ GOOGLE_TEACHER_EMAILS = {e.strip().lower() for e in os.getenv("GOOGLE_TEACHER_EM
 # Built website, served by the backend at / so one address (or one tunnel) is the whole app.
 FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", REPO_ROOT / "frontend" / "dist"))
 
+# Password-reset emails (optional). Any SMTP account works, e.g. a Gmail app password or a free transactional tier.
+# Without SMTP, teachers reset their students' passwords, and `python -m app.admin reset-link <email>` makes a link.
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587") or 587)
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", "").strip() or SMTP_USER
+# Public address of the website, used in emailed links (e.g. https://mindtrace-demo-api.onrender.com).
+PUBLIC_URL = os.getenv("PUBLIC_URL", "").strip().rstrip("/")
+
 # Sign-in sessions end after this many hours (teacher and student); the app then asks to sign in again.
 SESSION_HOURS = float(os.getenv("SESSION_HOURS", "168"))
 

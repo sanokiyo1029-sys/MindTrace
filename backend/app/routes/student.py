@@ -10,9 +10,9 @@ from app import ai_bridge, serialize
 from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
-from app.models import Assessment, Assignment, Feedback, PracticeSubmission, Scan, Sheet, Student
+from app.models import Assessment, Assignment, AuthToken, Feedback, PracticeSubmission, Scan, Sheet, Student, StudentAccount
 from app.routes.assessments import score
-from app.security import current_student
+from app.security import current_enrollments, current_session
 
 router = APIRouter(prefix="/api/student", tags=["student"])
 
@@ -23,11 +23,14 @@ def released(a: Assessment, sc: Scan | None) -> bool:
 
 
 @router.get("/me/results")
-def my_results(student: Student = Depends(current_student), db: Session = Depends(get_db)):
-    """CONTRACTS section 9, plus (additive) status, score, scan image, approved feedback and dates."""
+def my_results(enrollments: list[Student] = Depends(current_enrollments), session: AuthToken = Depends(current_session),
+               db: Session = Depends(get_db)):
+    """CONTRACTS section 9, plus (additive) status, score, scan image, approved feedback and dates. Covers every class
+    the student (account) is enrolled in."""
     lib = ai_bridge.misconception_library()
     out = []
-    for sh in db.scalars(select(Sheet).where(Sheet.student_id == student.id)):
+    ids = [s.id for s in enrollments]
+    for sh in db.scalars(select(Sheet).where(Sheet.student_id.in_(ids))):
         a = db.get(Assessment, sh.assessment_id)
         sc = db.scalar(select(Scan).where(Scan.sheet_id == sh.sheet_id, Scan.is_current.is_(True)))
         head = {"assessment_id": a.id, "title": a.title, "topic": a.topic, "subject": a.subject or "mathematics",
@@ -62,7 +65,8 @@ def my_results(student: Student = Depends(current_student), db: Session = Depend
         out.append({**head, "status": "released", "answers": answers, "score": {"correct": correct, "total": total},
                     "scan_url": sc.image_url, "feedback": feedback})
     out.sort(key=lambda r: r["created_at"], reverse=True)
-    return {"student": {"display_name": student.display_name}, "assessments": out}
+    acc = db.get(StudentAccount, session.subject_id)
+    return {"student": {"display_name": acc.name if acc else enrollments[0].display_name}, "assessments": out}
 
 
 def _practice_item(db: Session, asg: Assignment, student: Student) -> dict:
@@ -85,9 +89,10 @@ def _practice_item(db: Session, asg: Assignment, student: Student) -> dict:
 
 
 @router.get("/me/practice")
-def my_practice(student: Student = Depends(current_student), db: Session = Depends(get_db)):
-    rows = db.scalars(select(Assignment).where(Assignment.class_id == student.class_id).order_by(Assignment.created_at.desc()))
-    return [_practice_item(db, asg, student) for asg in rows]
+def my_practice(enrollments: list[Student] = Depends(current_enrollments), db: Session = Depends(get_db)):
+    by_class = {s.class_id: s for s in enrollments}
+    rows = db.scalars(select(Assignment).where(Assignment.class_id.in_(list(by_class))).order_by(Assignment.created_at.desc()))
+    return [_practice_item(db, asg, by_class[asg.class_id]) for asg in rows]
 
 
 class PracticeAnswer(BaseModel):
@@ -101,11 +106,12 @@ class PracticeBody(BaseModel):
 
 
 @router.post("/me/practice/{assignment_id}")
-def submit_practice(assignment_id: str, body: PracticeBody, student: Student = Depends(current_student),
+def submit_practice(assignment_id: str, body: PracticeBody, enrollments: list[Student] = Depends(current_enrollments),
                     db: Session = Depends(get_db)):
     """Once per student. A repeated submit (double tap, offline retry) returns the first one unchanged."""
     asg = db.get(Assignment, assignment_id)
-    if not asg or asg.class_id != student.class_id:
+    student = next((s for s in enrollments if asg and s.class_id == asg.class_id), None)
+    if not asg or student is None:
         raise api_error(404, "not_found", "That practice isn't assigned to you.")
     existing = db.scalar(select(PracticeSubmission).where(PracticeSubmission.assignment_id == asg.id,
                                                           PracticeSubmission.student_id == student.id))
