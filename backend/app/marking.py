@@ -181,18 +181,18 @@ _NUM = re.compile(r"[-−]?\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?(?:[eE][-+]?\d+
 
 def number(s) -> Fraction | None:
     """First number in the text: 12, -3.5, 3/4, 6.02e23 (commas as thousands separators are ignored)."""
-    if isinstance(s, (int, float)) and not isinstance(s, bool):
-        return Fraction(str(s))
-    m = _NUM.search(str(s or "").replace(",", "").replace("−", "-"))
-    if not m:
-        return None
     try:
+        if isinstance(s, (int, float)) and not isinstance(s, bool):
+            return Fraction(str(s))
+        m = _NUM.search(str(s or "").replace(",", "").replace("−", "-"))
+        if not m:
+            return None
         txt = m.group(0).replace(" ", "")
         if "/" in txt:
             a, b = txt.split("/")
             return Fraction(Fraction(a), Fraction(b)) if Fraction(b) else None
         return Fraction(txt) if "e" not in txt.lower() else Fraction(float(txt))
-    except (ValueError, ZeroDivisionError):
+    except (ValueError, ZeroDivisionError, OverflowError):
         return None
 
 

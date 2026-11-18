@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from app import ai_bridge, config, gemini
-from app.routes import accounts, assessments, auth, classes, insights_route, media, scans, student, teaching
+from app.routes import accounts, assessments, auth, classes, exams, insights_route, media, scans, student, teaching
 from app.seed import seed
 
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +21,17 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="MindTrace API", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def select_client_mode(request: Request, call_next):
+    # The APK explicitly opts out of server-side Gemini for question drafts, handwriting and feedback too.
+    mode = gemini.lens_only_client.set(request.headers.get("X-MindTrace-Mode") == "lens-only")
+    try:
+        return await call_next(request)
+    finally:
+        gemini.lens_only_client.reset(mode)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,7 +65,7 @@ def health():
 
 
 for r in (auth.router, classes.router, classes.student_router, assessments.router, scans.router, insights_route.router,
-          student.router, teaching.router, media.router, accounts.router):
+          student.router, teaching.router, media.router, accounts.router, exams.router):
     app.include_router(r)
 
 

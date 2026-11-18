@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+from contextvars import ContextVar
 
 import httpx
 
@@ -37,7 +38,10 @@ class GeminiError(Exception):
 
 
 def enabled() -> bool:
-    return config.AI_MODE == "live" and config.LLM_PROVIDER == "gemini" and bool(config.LLM_API_KEY)
+    return not lens_only_client.get() and config.AI_MODE == "live" and config.LLM_PROVIDER == "gemini" and bool(config.LLM_API_KEY)
+
+
+lens_only_client = ContextVar("lens_only_client", default=False)
 
 
 VISION_TIMEOUT = httpx.Timeout(45.0, connect=8.0)  # reading a page photo takes longer than text
