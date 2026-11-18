@@ -3,7 +3,7 @@ except the teaching suggestion + follow-up question text, which come through ai_
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
-from app import ai_bridge
+from app import ai_bridge, marking
 
 UNCERTAINTY = ("A wrong option is evidence of an incorrect answer, not proof of the reasoning. "
                "Some students may have guessed.")
@@ -17,7 +17,7 @@ def build(assessment: dict, questions: list[dict], scans: list[dict], printed: i
     q_stats = []
     per_mis = defaultdict(lambda: {"students": set(), "evidence": []})
     for q in questions:
-        if q.get("type") == "descriptive":  # written answers: teacher-reviewed feedback, not bubble counts
+        if marking.written(q):  # written answers: teacher-reviewed feedback, not bubble counts
             continue
         dist = {"A": 0, "B": 0, "C": 0, "D": 0, "blank": 0}
         chosen_by = defaultdict(set)

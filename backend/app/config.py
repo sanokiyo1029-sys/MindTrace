@@ -47,3 +47,4 @@ OMR_EMPTY = float(os.getenv("OMR_EMPTY", "0.18"))     # below this a bubble is c
 
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 (MEDIA_DIR / "scans").mkdir(parents=True, exist_ok=True)
+(MEDIA_DIR / "questions").mkdir(parents=True, exist_ok=True)

@@ -2,6 +2,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import marking
 from app.models import Assessment, Question, Scan, Sheet, Student
 
 
@@ -31,6 +32,8 @@ def scan(db: Session, sc: Scan) -> dict:
     sheet = db.get(Sheet, sc.sheet_id) if sc.sheet_id else None
     stu = db.get(Student, sheet.student_id) if sheet else None
     identity = sc.identity or {}
+    qs = {q.id: q.data for q in questions_of(db, sc.assessment_id)}
+    answers = [marking.scored(qs[x["question_id"]], x) if x.get("question_id") in qs else x for x in sc.answers or []]
     return {
         "scan_id": sc.id, "status": sc.status, "reject_reason": sc.reject_reason,
         "sheet_id": sc.sheet_id, "short_code": sheet.short_code if sheet else None,
@@ -39,6 +42,6 @@ def scan(db: Session, sc: Scan) -> dict:
                         "candidates": identity.get("candidates", [])},
         "extracted_by": sc.extracted_by,
         "warnings": sc.warnings or [],
-        "answers": sc.answers or [], "image_url": sc.image_url, "duplicate_of": sc.duplicate_of,
+        "answers": answers, **marking.totals(qs, sc.answers or []), "image_url": sc.image_url, "duplicate_of": sc.duplicate_of,
         "version": sc.version or 1,
     }

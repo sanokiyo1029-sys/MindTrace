@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import ai_bridge, gemini, serialize
+from app import ai_bridge, gemini, marking, serialize
 from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
@@ -43,7 +43,7 @@ def _sync_feedback(db: Session, a) -> list[Feedback]:
             q = qs.get(x["question_id"])
             if not q:
                 continue
-            written = q.get("type") == "descriptive"
+            written = marking.written(q)
             if not (written and x.get("final") == "answered") and not (
                     not written and x.get("final") in ("A", "B", "C", "D") and x["final"] != q.get("answer")):
                 continue
@@ -98,7 +98,7 @@ def suggest_feedback(assessment_id: str, teacher: Teacher = Depends(current_teac
     answers = {(sc.id, x["question_id"]): x for sc in current_scans(db, a.id) for x in sc.answers or []}
     for f in rows:
         q = qs[f.question_id]
-        if q.get("type") != "descriptive" or f.status != "pending" or (f.suggestion or {}).get("state") == "ok":
+        if not marking.written(q) or f.status != "pending" or (f.suggestion or {}).get("state") == "ok":
             continue
         x = answers.get((f.scan_id, f.question_id), {})
         text = (x.get("text") or "").strip()

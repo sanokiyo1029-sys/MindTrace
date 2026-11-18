@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import ai_bridge, serialize
+from app import ai_bridge, marking, serialize
 from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
@@ -48,13 +48,14 @@ def my_results(enrollments: list[Student] = Depends(current_enrollments), sessio
                 continue
             chosen = x.get("final")
             maybe = None
-            if q.get("type", "mcq") != "descriptive" and chosen in ("A", "B", "C", "D") and chosen != q["answer"]:
+            if not marking.written(q) and chosen in ("A", "B", "C", "D") and chosen != q["answer"]:
                 mid = ((q.get("distractors") or {}).get(chosen) or {}).get("misconception_id")
                 maybe = lib.get(mid, {}).get("student_friendly")
             answers.append({"question_id": x["question_id"], "type": q.get("type", "mcq"), "stem": q["stem"],
-                            "options": q.get("options"), "chosen": chosen, "correct": q.get("answer"),
+                            "options": marking.options(q) or None, "chosen": chosen, "correct": q.get("answer"),
                             "explanation": q.get("explanation"), "maybe": maybe, "text": x.get("text", ""),
-                            "concept": q.get("concept", "")})
+                            "concept": q.get("concept", ""), "code": q.get("code"), "image_url": q.get("image_url"),
+                            **{k: v for k, v in marking.scored(q, x).items() if k in ("score", "max_score")}})
         feedback = []
         for f in db.scalars(select(Feedback).where(Feedback.scan_id == sc.id, Feedback.status == "approved")):
             mid = (f.suggestion or {}).get("misconception_id")
@@ -62,7 +63,8 @@ def my_results(enrollments: list[Student] = Depends(current_enrollments), sessio
             video = f.video_url or (step.get("video_url") if step.get("status") != "dismissed" else None)
             feedback.append({"question_id": f.question_id, "concept": f.concept, "text": f.text, "video_url": video})
         correct, total = score(qs, sc.answers)
-        out.append({**head, "status": "released", "answers": answers, "score": {"correct": correct, "total": total},
+        out.append({**head, "status": "released", "answers": answers, "score": {"correct": correct, "total": total,
+                                                                               **marking.totals(qs, sc.answers)},
                     "scan_url": sc.image_url, "feedback": feedback})
     out.sort(key=lambda r: r["created_at"], reverse=True)
     acc = db.get(StudentAccount, session.subject_id)

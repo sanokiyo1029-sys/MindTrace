@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import serialize
+from app import marking, serialize
 from app.db import get_db
 from app.errors import api_error
 from app.ids import join_code, new_id
@@ -165,7 +165,7 @@ def overview(class_id: str, subject: str = "mathematics", include_understanding:
             k = q.get("concept") or a.topic
             cov = coverage.setdefault(k, {"concept": k, "topic": a.topic, "questions": 0, "correct": 0, "answered": 0})
             cov["questions"] += 1
-            if q.get("type", "mcq") == "descriptive":
+            if marking.written(q):
                 continue
             for s in accepted:
                 x = next((x for x in s.answers if x["question_id"] == qid), None)

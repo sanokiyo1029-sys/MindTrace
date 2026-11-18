@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends
+import cv2
+import numpy as np
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import ai_bridge, insights, serialize
+from app import ai_bridge, insights, marking, serialize
+from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
@@ -15,7 +18,7 @@ from app.security import current_teacher
 
 router = APIRouter(prefix="/api", tags=["assessments"])
 
-EDITABLE = {"stem", "options", "answer", "explanation", "distractors", "difficulty", "concept", "model_answer", "look_for"}
+EDITABLE = marking.FIELDS - {"image_url"}  # every type's fields (marking.py); pictures go through POST /questions/{id}/image
 MAX_QUESTIONS = 5  # one A4 page per paper (CONTRACTS section 5)
 LOCKED = {"printed", "scanning", "confirmed"}
 
@@ -92,14 +95,7 @@ def generate(body: GenerateBody, teacher: Teacher = Depends(current_teacher), db
 # ---------------------------------------------------------------- edit / approve
 @router.patch("/questions/{question_id}")
 def edit_question(question_id: str, body: dict, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
-    q = db.get(Question, question_id)
-    if not q:
-        raise api_error(404, "not_found", "Question not found.")
-    a = own_assessment(db, teacher, q.assessment_id)
-    if a.status in LOCKED:
-        raise api_error(409, "already_printed", "This quiz is already printed. Create a new one to change questions.")
-    if db.scalar(select(Assignment).where(Assignment.assessment_id == a.id)):
-        raise api_error(409, "already_assigned", "Students already have this as practice. Create a new one to change questions.")
+    q, a = _editable_question(db, teacher, question_id)
     base = body.get("base_version")
     if base is not None and base != q.data.get("version", 1):
         raise api_error(409, "conflict", "This question was changed somewhere else since you edited it. Check the "
@@ -115,6 +111,58 @@ def edit_question(question_id: str, body: dict, teacher: Teacher = Depends(curre
     a.status = "draft"  # any edit needs a fresh approval
     db.commit()
     return _with_errors(serialize.question(q))
+
+
+def _editable_question(db: Session, teacher: Teacher, question_id: str) -> tuple[Question, Assessment]:
+    q = db.get(Question, question_id)
+    if not q:
+        raise api_error(404, "not_found", "Question not found.")
+    a = own_assessment(db, teacher, q.assessment_id)
+    if a.status in LOCKED:
+        raise api_error(409, "already_printed", "This quiz is already printed. Create a new one to change questions.")
+    if db.scalar(select(Assignment).where(Assignment.assessment_id == a.id)):
+        raise api_error(409, "already_assigned", "Students already have this as practice. Create a new one to change questions.")
+    return q, a
+
+
+MAX_PICTURE_BYTES = 6 * 1024 * 1024
+
+
+def _set_picture(db: Session, q: Question, a: Assessment, url: str | None) -> dict:
+    old = (q.data.get("image_url") or "").rsplit("/", 1)[-1]
+    if old:
+        (MEDIA_DIR / "questions" / old).unlink(missing_ok=True)
+    data = {k: v for k, v in q.data.items() if k != "image_url"} | ({"image_url": url} if url else {})
+    data["version"] = data.get("version", 1) + 1
+    q.data, q.status, a.status = data, "draft", "draft"
+    db.commit()
+    return _with_errors(serialize.question(q))
+
+
+@router.post("/questions/{question_id}/image")
+def question_picture(question_id: str, image: UploadFile = File(...), teacher: Teacher = Depends(current_teacher),
+                     db: Session = Depends(get_db)):
+    """A picture, diagram or graph for the question. Re-encoded as a plain JPEG (drops metadata, checks it's an image)."""
+    q, a = _editable_question(db, teacher, question_id)
+    raw = image.file.read(MAX_PICTURE_BYTES + 1)
+    if len(raw) > MAX_PICTURE_BYTES:
+        raise api_error(413, "too_large", "Use a picture under 6 MB.")
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR) if raw else None
+    if img is None:
+        raise api_error(400, "bad_image", "That file isn't a picture MindTrace can read. Use a JPG or PNG.")
+    scale = 1200 / max(img.shape[:2])
+    if scale < 1:
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    name = f"{q.id}_{q.data.get('version', 1) + 1}.jpg"
+    ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    (MEDIA_DIR / "questions" / name).write_bytes(jpg.tobytes())
+    return _set_picture(db, q, a, f"/api/media/questions/{name}")
+
+
+@router.delete("/questions/{question_id}/image")
+def remove_question_picture(question_id: str, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
+    q, a = _editable_question(db, teacher, question_id)
+    return _set_picture(db, q, a, None)
 
 
 @router.post("/assessments/{assessment_id}/approve")
@@ -135,19 +183,8 @@ def approve(assessment_id: str, teacher: Teacher = Depends(current_teacher), db:
     return _assessment_out(db, a)
 
 
-class NewQuestion(BaseModel):
-    type: str = Field("descriptive", pattern="^(mcq|descriptive)$")
-    stem: str = ""
-    concept: str = ""
-    model_answer: str = ""
-    options: dict[str, str] | None = None
-    answer: str | None = None
-    explanation: str = ""
-    distractors: dict | None = None
-
-
 @router.post("/assessments/{assessment_id}/questions")
-def add_question(assessment_id: str, body: NewQuestion, teacher: Teacher = Depends(current_teacher),
+def add_question(assessment_id: str, body: dict, teacher: Teacher = Depends(current_teacher),
                  db: Session = Depends(get_db)):
     """The teacher writes a question themselves (usually a written-answer one) next to the drafted ones."""
     a = own_assessment(db, teacher, assessment_id)
@@ -156,9 +193,12 @@ def add_question(assessment_id: str, body: NewQuestion, teacher: Teacher = Depen
     qs = serialize.questions_of(db, a.id)
     if len(qs) >= MAX_QUESTIONS:
         raise api_error(400, "too_many_questions", f"A paper holds at most {MAX_QUESTIONS} questions.")
-    data = {k: v for k, v in body.model_dump().items() if v is not None}
-    if body.type == "descriptive":
-        data = {k: data[k] for k in ("type", "stem", "concept", "model_answer") if k in data}
+    kind = body.get("type") or "descriptive"
+    if kind not in marking.TYPES:
+        raise api_error(400, "bad_type", "Unknown question type.")
+    data = {k: v for k, v in body.items() if k in EDITABLE and v is not None} | {"type": kind}
+    if kind == "descriptive":
+        data = {k: data[k] for k in ("type", "stem", "concept", "model_answer", "marks") if k in data}
     data.update(topic=a.topic, subject=a.subject, source="teacher", edited_by_teacher=True, version=1,
                 difficulty="medium")
     q = Question(id=new_id("q"), assessment_id=a.id, position=len(qs), data=data, status="draft")
@@ -256,7 +296,7 @@ def results(assessment_id: str, teacher: Teacher = Depends(current_teacher), db:
 
 def score(qs: dict, answers: list[dict]) -> tuple[int, int]:
     """(correct, total) over bubble questions only; written answers are read by the teacher, not scored."""
-    mcq = {qid for qid, q in qs.items() if q.get("type", "mcq") != "descriptive"}
+    mcq = {qid for qid, q in qs.items() if not marking.written(q)}
     return sum(1 for x in answers if x["question_id"] in mcq and qs[x["question_id"]].get("answer") == x.get("final")), len(mcq)
 
 
@@ -271,6 +311,9 @@ def results_of(db: Session, a: Assessment) -> list[dict]:
         correct, total = score(qs, answers)
         out.append({"student": serialize.student(stu), "roll_no": stu.roll_no, "short_code": sh.short_code,
                     "scan_status": sc.status if sc else "missing", "correct": correct, "total": total,
-                    "answers": [{"question_id": x["question_id"], "final": x.get("final"), "text": x.get("text", "")}
-                                for x in answers]})
+                    **marking.totals(qs, answers),
+                    "answers": [{"question_id": x["question_id"], "final": x.get("final"), "text": x.get("text", ""),
+                                 **{k: v for k, v in marking.scored(qs[x["question_id"]], x).items()
+                                    if k in ("score", "max_score", "scored_by")}}
+                                for x in answers if x["question_id"] in qs]})
     return out

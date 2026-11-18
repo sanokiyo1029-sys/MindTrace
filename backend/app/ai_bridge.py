@@ -16,7 +16,7 @@ import re
 import threading
 from fractions import Fraction
 
-from app import demo_data, gemini, subject_data
+from app import demo_data, gemini, marking, subject_data
 from app.config import FIXTURES_DIR
 
 log = logging.getLogger("mindtrace.ai")
@@ -125,6 +125,8 @@ def _validate_descriptive(q: dict) -> list[str]:
 def _fallback_validate(q: dict) -> list[str]:
     if q.get("type") == "descriptive":
         return _validate_descriptive(q)
+    if marking.qtype(q) != "mcq":  # every newer type (CONTRACTS: question types and marking)
+        return marking.validate(q)
     errors: list[str] = []
     opts = q.get("options") or {}
     if sorted(opts.keys()) != ["A", "B", "C", "D"]:
@@ -418,7 +420,7 @@ def generate_questions(topic: str, concepts_text: str, n: int, grade: str, subje
 
 def validate_question(q: dict) -> list[str]:
     errors = _fallback_validate(q)  # always run our structural + maths checks
-    if _HAS_AI and q.get("type") != "descriptive":
+    if _HAS_AI and marking.qtype(q) == "mcq":
         try:
             for e in _ai.validate_question(q) or []:
                 if e not in errors:

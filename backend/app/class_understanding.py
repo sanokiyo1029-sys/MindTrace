@@ -1,4 +1,5 @@
 """Teacher dashboard evidence from reviewed multiple-choice answers."""
+from app import marking
 
 
 def add_assessment(concepts, results, assessment, questions, scans, students_by_sheet, library):
@@ -13,7 +14,7 @@ def add_assessment(concepts, results, assessment, questions, scans, students_by_
         if name not in seen:
             concept["assessment_ids"].append(assessment.id)
             seen.add(name)
-        if question.get("type") != "descriptive" and question.get("answer") in ("A", "B", "C", "D"):
+        if not marking.written(question) and question.get("answer") in ("A", "B", "C", "D"):
             scored[qid] = (name, question)
 
     distributions = {qid: {} for qid in scored}

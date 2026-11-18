@@ -132,7 +132,8 @@ def test_feedback_ai_failure_too_unclear_approval_and_student_privacy(client, ge
     assert client.get(f"/api/media/scans/{ids['01']}.jpg", headers=S1).status_code == 403
     assert client.post(f"/api/assessments/{a['id']}/confirm", headers=H).json()["status"] == "confirmed"
     row = [x for x in client.get("/api/student/me/results", headers=S1).json()["assessments"] if x["assessment_id"] == a["id"]][0]
-    assert row["status"] == "released" and row["score"] == {"correct": 1, "total": 2}  # written answer not scored
+    assert row["status"] == "released" and row["score"].items() >= {"correct": 1, "total": 2}.items()  # bubbles: as before
+    assert (row["score"]["score"], row["score"]["to_mark"]) == (1, 1)  # written answer waits for the teacher's mark
     assert [f["text"] for f in row["feedback"]] == ["Try drawing the two forces on the book as arrows."]  # pending MCQ hidden
     assert row["feedback"][0]["video_url"] == "https://example.org/forces.mp4"
     # own scan yes; a classmate's scan, without a token, or via the teacher API: no

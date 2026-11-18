@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import config, gemini, rolls, serialize
+from app import config, gemini, marking, rolls, serialize
 from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
@@ -237,6 +237,7 @@ class ReviewAnswer(BaseModel):
     question_id: str
     final: str | None = None  # A-D | blank for bubbles; answered | blank for written answers; None = keep
     text: str | None = None   # teacher's corrected transcription (reasoning, notes or the written answer)
+    score: float | None = None  # teacher's mark (partial credit allowed, 0..marks); send null to go back to auto-marking
 
 
 class ReviewBody(BaseModel):
@@ -293,10 +294,15 @@ def review(scan_id: str, body: ReviewBody, teacher: Teacher = Depends(current_te
                                                           "Choose Replace to use this photo instead.")
             sc.warnings = [w for w in (sc.warnings or []) if not w["code"].startswith("roll_") and w["code"] != "already_confirmed"]
 
-        kinds = dict(zip([q.id for q in serialize.questions_of(db, a.id)],
-                         question_types([q.data for q in serialize.questions_of(db, a.id)])))
-        fixes, texts = {}, {}
+        qdata = {q.id: q.data for q in serialize.questions_of(db, a.id)}
+        kinds = dict(zip(qdata, question_types(list(qdata.values()))))
+        fixes, texts, scores = {}, {}, {}
         for x in body.answers:
+            if "score" in x.model_fields_set and x.question_id in qdata:
+                full = marking.marks(qdata[x.question_id])
+                if x.score is not None and not 0 <= x.score <= full:
+                    raise api_error(400, "bad_score", f"A mark must be between 0 and {full:g}.")
+                scores[x.question_id] = None if x.score is None else round(x.score, 2)
             if x.text is not None:
                 texts[x.question_id] = x.text.strip()[:4000]
             if x.final is None:
@@ -312,6 +318,10 @@ def review(scan_id: str, body: ReviewBody, teacher: Teacher = Depends(current_te
             x = dict(x)
             if x["question_id"] in fixes:
                 x["final"], x["reviewed"] = fixes[x["question_id"]], True
+            if x["question_id"] in scores:
+                x.pop("teacher_score", None)
+                if scores[x["question_id"]] is not None:
+                    x["teacher_score"], x["reviewed"] = scores[x["question_id"]], True
             if x["question_id"] in texts:
                 x["text"], x["text_state"], x["reviewed"] = texts[x["question_id"]], "teacher", True
                 if x.get("type") == "descriptive":

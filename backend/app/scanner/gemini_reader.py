@@ -74,7 +74,9 @@ def extract(image_jpeg: bytes, *, title: str, class_name: str, paper_code: str, 
               "mark; multiple = two or more marks; ambiguous = a faint, partial or corrected mark you are not sure "
               "about; unreadable = that part of the page isn't visible. For a written-answer question use marked = [] and "
               "state = blank if the box is empty, else single. For every question also transcribe the handwriting in "
-              "its box (written_text) and say how legible it is (writing). The photo may be rotated.")
+              "its box (written_text) and say how legible it is (writing). Some boxes start with PRINTED lines "
+              "(options, items to match, code, a picture): never copy printed text, only the student's handwriting. "
+              "The photo may be rotated.")
     raw = gemini.ask(SYSTEM, prompt, schema(question_ids), temperature=0.0, image_jpeg=image_jpeg)
     return validate(raw, question_ids=question_ids, paper_code=paper_code, class_name=class_name, types=types)
 
