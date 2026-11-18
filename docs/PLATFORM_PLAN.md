@@ -73,7 +73,7 @@ follow-up) stays the core. Everything below adds to it; nothing in it is removed
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Accounts: student sign-up with class join codes, multiple classes per student, email/password student login (code + PIN still works), password recovery (SMTP or teacher/admin reset), profile, login rate limiting; teacher roster management (codes, add/remove/reset students) | **in progress** |
+| 1 | Accounts: student sign-up with class join codes, multiple classes per student, email/password student login (code + PIN still works), password recovery (SMTP or teacher/admin reset), profile, login rate limiting; teacher roster management (codes, add/remove/reset students) | **done**: 72 backend tests pass; browser-checked sign-up, join 2nd class, email login, forgot/reset, teacher reset |
 | 2 | Question types + marking engine (auto-mark objective types, manual marking with partial credit), printable layout for the new objective types where the sheet allows | planned |
 | 3 | Online examinations: builder, timed player, submissions, review, publish results, reports | planned |
 | 4 | Offline examinations: service worker, IndexedDB answers, download, auto-save, sync with duplicate protection, status | planned |
