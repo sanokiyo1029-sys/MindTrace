@@ -6,6 +6,16 @@ import pytest
 
 from app import ai_bridge, config, gemini
 
+
+def test_lens_only_client_disables_server_gemini(client, monkeypatch):
+    monkeypatch.setattr(config, "AI_MODE", "live")
+    monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(config, "LLM_API_KEY", "test-key")
+    assert client.get("/api/health").json()["gemini"] is True
+    lens = client.get("/api/health", headers={"X-MindTrace-Mode": "lens-only"}).json()
+    assert lens["gemini"] is False and lens["ai_provider"] == "samples"
+    assert client.get("/api/health").json()["gemini"] is True
+
 GOOD = [
     {"concept": "adding equal denominators", "stem": "What is 1/4 + 2/4?", "answer": "B", "difficulty": "easy",
      "options": {"A": "3/8", "B": "3/4", "C": "2/16", "D": "1/4"}, "explanation": "Keep the quarters: 1 + 2 = 3 quarters.",
