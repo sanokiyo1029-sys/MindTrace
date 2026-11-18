@@ -1,7 +1,12 @@
 # CODEX HANDOFF — MindTrace platform expansion
 
-Branch **`feat/platform-expansion`** (local worktree `C:\Users\meyaa\Desktop\mt-platform`, based on `ae3ba51` of
-`feat/google-gemini-ai`). **Not pushed yet** and **not deployed**. The live Render demo still runs `ae3ba51`.
+Branch **`feat/platform-expansion`** (pushed to GitHub; local worktree `C:\Users\meyaa\Desktop\mt-platform`).
+
+**Deployed (18 Nov 2026):** Render service `mindtrace-demo-api` now builds branch `feat/platform-expansion` (live
+commit e52204f; `/api/health` shows `storage: temporary` = no database yet, data still wiped on restart).
+**Vercel `mindtrace-preview`** now holds a 2-file Vercel Drop deploy (`vercel.json` + `forward.txt`) that rewrites
+**every** path to `https://mindtrace-demo-api.onrender.com/$1`, so the Vercel site always shows what Render runs and
+needs no more uploads (first load waits for Render to wake). The earlier prebuilt drops remain in Vercel's history.
 Read `AGENTS.md`, `docs/CONTRACTS.md` (bottom sections are new), `docs/PLATFORM_PLAN.md`, `docs/DEPLOY.md` first.
 
 ## 1. Project overview
@@ -98,5 +103,5 @@ loading / "didn't load" + Try again / empty-class states; 404s explain the reset
 
 ## 8. Git status (at handoff)
 - Branch `feat/platform-expansion`, latest commit `9f107b0` (+ this handoff commit). Working tree clean apart from it.
-- Not pushed to GitHub. Desktop clone `C:\Users\meyaa\Desktop\MindTrace` has unrelated uncommitted files
+- Pushed to GitHub (origin/feat/platform-expansion). Desktop clone `C:\Users\meyaa\Desktop\MindTrace` has unrelated uncommitted files
   (`frontend/src/paper.css`, `demo/scan_log.md`, `docs/BUILD_PROMPT.md`): leave them alone.
