@@ -36,6 +36,7 @@ _NEW_COLUMNS = {
     "students": {"roll_no": "VARCHAR", "google_sub": "VARCHAR", "account_id": "VARCHAR"},
     "classes": {"join_code": "VARCHAR"},
     "tokens": {"google_subject": "VARCHAR"},
+    "exam_attempts": {"last_write_id": "VARCHAR"},
     "scans": {"roll_number": "VARCHAR", "extracted_by": "VARCHAR", "identity": "JSON", "warnings": "JSON",
               "version": "INTEGER DEFAULT 1"},
     "assessments": {"subject": "VARCHAR DEFAULT 'mathematics'", "plan": "JSON"},

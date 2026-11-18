@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { isNative } from './api.js';
 import Icon from './Icon.jsx';
 import { Button, PageHeading, Panel } from './ui.jsx';
+import { copyImage } from './lens.js';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -16,19 +17,6 @@ const ACTIONS = {
 };
 
 export const geminiUrl = (account) => `https://gemini.google.com/app${account ? `?authuser=${encodeURIComponent(account)}` : ''}`;
-
-// Images go to the clipboard as PNG (what browsers allow), so the teacher can paste them into Gemini or Lens.
-export async function toPng(blob) {
-  if (blob.type === 'image/png') return blob;
-  const bitmap = await createImageBitmap(blob);
-  const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
-  canvas.getContext('2d').drawImage(bitmap, 0, 0);
-  return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Couldn’t prepare the image.')), 'image/png'));
-}
-export function copyImage(blobPromise) { // call straight from a click, before opening any window
-  if (!window.ClipboardItem || !navigator.clipboard?.write) return Promise.reject(new Error('This browser can’t copy images.'));
-  return navigator.clipboard.write([new ClipboardItem({ 'image/png': Promise.resolve(blobPromise).then(toPng) })]);
-}
 
 export default function AiPage({ account, flash, onSignOut }) {
   const [prompt, setPrompt] = useState('');

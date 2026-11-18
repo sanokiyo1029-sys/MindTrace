@@ -11,7 +11,7 @@ from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
 from app.models import Assignment, Feedback, PracticeSubmission, Student, Teacher
-from app.routes.common import current_scans, own_assessment
+from app.routes.common import current_scans, ensure_no_exam, own_assessment
 from app.security import current_teacher
 
 router = APIRouter(prefix="/api", tags=["teaching"])
@@ -177,7 +177,8 @@ def edit_plan(assessment_id: str, misconception_id: str, body: PlanEdit, teacher
 @router.post("/assessments/{assessment_id}/assign")
 def assign(assessment_id: str, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
     """Make an approved (usually follow-up) assessment available to the class as online practice."""
-    a = own_assessment(db, teacher, assessment_id)
+    a = own_assessment(db, teacher, assessment_id, lock=True)
+    ensure_no_exam(db, a.id)
     if a.status == "draft":
         raise api_error(409, "not_approved", "Approve the questions before assigning them.")
     existing = db.scalar(select(Assignment).where(Assignment.assessment_id == a.id))

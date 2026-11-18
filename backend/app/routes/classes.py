@@ -87,11 +87,13 @@ def _class_student(db: Session, teacher: Teacher, class_id: str, student_id: str
 @router.delete("/{class_id}/students/{student_id}")
 def remove_student(class_id: str, student_id: str, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
     """Only students with no papers yet: results and scans are never deleted by removing someone from the list."""
-    from app.models import AuthToken, Sheet
+    from app.models import AuthToken, ExamAttempt, Sheet
     s = _class_student(db, teacher, class_id, student_id)
     if db.scalar(select(Sheet).where(Sheet.student_id == s.id)):
         raise api_error(409, "has_papers", f"{s.display_name} already has papers in this class, so they can't be "
                                            "removed. Their results stay in your reports.")
+    if db.scalar(select(ExamAttempt.id).where(ExamAttempt.student_id == s.id).limit(1)):
+        raise api_error(409, "has_exam_attempt", "This student has an exam attempt. Keep their enrollment to preserve the report.")
     db.query(AuthToken).filter(AuthToken.subject_id == s.id).delete()
     db.delete(s)
     db.commit()

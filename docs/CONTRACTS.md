@@ -283,3 +283,22 @@ Everything above still holds. Older MCQ-only assessments and scans need no chang
 - `POST /assessments/{id}/questions` takes any type and its key fields; `PATCH /questions/{id}` may change them (approval validates every type).
 - Scans: each answer gains `score`, `max_score`, `scored_by` (`teacher` | `auto` | null = to mark) and the scan gains `score`, `max_score`, `to_mark`. Review answers may include `score` (0..marks, partial allowed; `null` returns it to auto-marking). Written answers auto-mark from the transcription once it is clear or typed by the teacher.
 - `GET /assessments/{id}/results` rows and the student's released results add `score`, `max_score`, `to_mark` (`correct`/`total` still count bubble questions only). Student answers, practice questions and feedback items add `written` (bubble vs written box).
+
+**Online exams (Phase 3)**
+
+- `GET /exams` lists the teacher's exams. `POST /exams` accepts `{assessment_id, duration_minutes}` (1–180 minutes) and opens the exam to the assessment's class. The source must be approved and unused for paper or practice. The exam ID is the assessment ID, and publishing locks its questions and images. Requesting the same duration again returns the existing exam.
+- `GET /exams/{id}` gives the owning teacher the questions and class roster with each student's attempt status. Submitted and released attempts include responses, auto marks, manual overrides and totals. `PATCH /exams/{id}/attempts/{attempt_id}` accepts `{version, scores: {question_id: points}, release?: boolean}`. Marks are between zero and each question's maximum. Results can be released once all answered manual questions are marked. Released marks are final.
+- `GET /student/me/exams` lists exams only for the signed-in student's classes. `GET /student/me/exams/{id}` shows that student's attempt. `POST /student/me/exams/{id}/start` starts or returns the same attempt, with a server-set deadline. Statuses are `ready`, `in_progress`, `submitted` and `released`.
+- `PUT /student/me/exams/{id}/attempt` takes `{version, answers: {question_id: response}, submit?: boolean}`. Use a letter for choice, an array of letters for multiple select, an ordered array of strings for blanks, an object of 1-based row numbers to letters for matching, or a string for other types. Saving replaces that student's draft. A stale version returns 409 with `current`; retrying after submission or expiry returns the current state and cannot overwrite answers.
+- Student questions are visible while the attempt is open and after release. The server sends display fields and question structure only. Scores and per-question marks are private until release. At the deadline the last server-saved draft becomes the submission.
+
+**Offline exams (Phase 4)**
+
+- An enrolled student signs in and starts the exam online, then selects **Download for offline use**. A production HTTPS build caches the public application shell for `/student` only. Its service worker never caches API responses. IndexedDB keeps each downloaded paper, question images, answers and queued edits under the student's verified ID and server. Reopen `/student` on the same signed-in device to use that copy.
+- Saving or queuing a submission offline is a local action. When the student page is open and connectivity returns, or when it reopens online, it syncs pending changes. `PUT /student/me/exams/{id}/attempt` accepts an optional UUID `write_id`. The attempt echoes the most recently applied `last_write_id`. Retry with that same ID to confirm the save without applying it again. The existing attempt version protects other saves from being overwritten.
+- The server deadline still applies. A closed attempt includes `submission_reason` (`student` or `deadline`). Changes that miss the deadline stay viewable on the device for reference. The last server-saved answers remain the graded submission.
+
+**Student study tools (Phase 5)**
+
+- Google Lens opens separately for capture and text copying. The student pastes and edits the text in MindTrace. The website can prepare a hint, explanation or practice prompt and opens Gemini only through an explicit link. No exam answers, student records or copied text are sent automatically.
+- The Android build (`npm run android:sync`) keeps Lens capture, editing and copying. It omits the Gemini handoffs and sends `X-MindTrace-Mode: lens-only` to disable MindTrace's server-side Gemini calls for that client. The Lens action tries the installed Lens or Google app, then opens the Lens website in the system browser.

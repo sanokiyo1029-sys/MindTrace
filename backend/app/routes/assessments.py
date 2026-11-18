@@ -13,7 +13,7 @@ from app.errors import api_error
 from app.ids import new_id
 from app.models import Assessment, Assignment, ClassRoom, Question, Sheet, Student, Teacher
 from app.pdf import build_pdf
-from app.routes.common import current_scans, own_assessment, sheets_of
+from app.routes.common import current_scans, ensure_no_exam, own_assessment, sheets_of
 from app.security import current_teacher
 
 router = APIRouter(prefix="/api", tags=["assessments"])
@@ -117,7 +117,8 @@ def _editable_question(db: Session, teacher: Teacher, question_id: str) -> tuple
     q = db.get(Question, question_id)
     if not q:
         raise api_error(404, "not_found", "Question not found.")
-    a = own_assessment(db, teacher, q.assessment_id)
+    a = own_assessment(db, teacher, q.assessment_id, lock=True)
+    ensure_no_exam(db, a.id)
     if a.status in LOCKED:
         raise api_error(409, "already_printed", "This quiz is already printed. Create a new one to change questions.")
     if db.scalar(select(Assignment).where(Assignment.assessment_id == a.id)):
@@ -187,7 +188,8 @@ def approve(assessment_id: str, teacher: Teacher = Depends(current_teacher), db:
 def add_question(assessment_id: str, body: dict, teacher: Teacher = Depends(current_teacher),
                  db: Session = Depends(get_db)):
     """The teacher writes a question themselves (usually a written-answer one) next to the drafted ones."""
-    a = own_assessment(db, teacher, assessment_id)
+    a = own_assessment(db, teacher, assessment_id, lock=True)
+    ensure_no_exam(db, a.id)
     if a.status in LOCKED:
         raise api_error(409, "already_printed", "This quiz is already printed. Create a new one to change questions.")
     qs = serialize.questions_of(db, a.id)
@@ -211,7 +213,8 @@ def add_question(assessment_id: str, body: dict, teacher: Teacher = Depends(curr
 # ---------------------------------------------------------------- print
 @router.get("/assessments/{assessment_id}/print")
 def print_sheets(assessment_id: str, teacher: Teacher = Depends(current_teacher), db: Session = Depends(get_db)):
-    a = own_assessment(db, teacher, assessment_id)
+    a = own_assessment(db, teacher, assessment_id, lock=True)
+    ensure_no_exam(db, a.id)
     if a.status == "draft":
         raise api_error(409, "not_approved", "Approve all questions before printing.")
     cls = db.get(ClassRoom, a.class_id)

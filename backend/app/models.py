@@ -159,6 +159,30 @@ class Assignment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class Exam(Base):
+    __tablename__ = "exams"
+    assessment_id: Mapped[str] = mapped_column(ForeignKey("assessments.id"), primary_key=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    questions: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ExamAttempt(Base):
+    __tablename__ = "exam_attempts"
+    __table_args__ = (UniqueConstraint("exam_id", "student_id", name="ux_exam_attempt_once"),)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    exam_id: Mapped[str] = mapped_column(ForeignKey("exams.assessment_id"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    answers: Mapped[dict] = mapped_column(JSON, default=dict)
+    teacher_scores: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_write_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class PracticeSubmission(Base):
     __tablename__ = "practice_submissions"
     __table_args__ = (UniqueConstraint("assignment_id", "student_id", name="ux_practice_once"),)
