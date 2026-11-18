@@ -34,6 +34,7 @@ export default function AiPage({ account, flash, onSignOut }) {
   const [prompt, setPrompt] = useState('');
   const [image, setImage] = useState(null); // { file, url }
   const [step, setStep] = useState('');
+  const [blocked, setBlocked] = useState(false);
   const fileRef = useRef(null);
   useEffect(() => () => { if (image) URL.revokeObjectURL(image.url); }, [image]);
 
@@ -57,7 +58,8 @@ export default function AiPage({ account, flash, onSignOut }) {
   function openGemini(text) {
     // Copy first (needs this page focused), then open the popup in the same click.
     const copied = text ? navigator.clipboard?.writeText(text) : copyImage(image.file);
-    window.open(geminiUrl(account), isNative ? '_blank' : 'mindtrace-gemini', isNative ? undefined : 'popup,width=560,height=820');
+    const win = window.open(geminiUrl(account), isNative ? '_blank' : 'mindtrace-gemini', isNative ? undefined : 'popup,width=560,height=820');
+    setBlocked(!win && !isNative); // pop-up blocked: offer a plain link instead (browsers allow those)
     Promise.resolve(copied).then(() => setStep(text ? (image ? 'text-then-image' : 'text') : 'image'),
       () => setStep('manual'));
   }
@@ -82,6 +84,7 @@ export default function AiPage({ account, flash, onSignOut }) {
         {image && <button type="button" className="button outline" onClick={() => copyImage(image.file).then(() => flash('Image copied. Paste it into Gemini.', 'success'), e => flash(e.message))}><Icon name="copy" size={16} /> Copy image</button>}
         <Button type="button" disabled={!prompt.trim() && !image} onClick={() => openGemini(prompt.trim())} icon="spark">Open in Gemini</Button>
       </div>
+      {blocked && <div className="note-banner" role="alert"><Icon name="spark" size={17} /><p>Your browser blocked the Gemini window. <a className="text-link" href={geminiUrl(account)} target="_blank" rel="noreferrer">Open Gemini</a>, then paste.</p></div>}
       {step && <div className="note-banner" role="status"><Icon name="spark" size={17} /><p>{{
         text: 'Gemini is open. Your question is copied: click the Gemini box and paste it (Ctrl+V, or long-press → Paste).',
         'text-then-image': 'Gemini is open and your question is copied. Paste it, then come back, click Copy image and paste the image too.',
