@@ -74,7 +74,7 @@ Verified (tests + browser against a scratch backend, AI off or Gemini mocked at 
    - Google Cloud → OAuth client **Web application**: JS origins `http://localhost`, `http://localhost:8000`, `http://localhost:5173`, plus the public https address. No redirect URIs.
    - OAuth client **Android**: package `org.mindtrace.app`, SHA-1 of the debug key on the dev PC `F0:4E:49:5E:2C:EB:93:96:8D:C1:47:86:D5:40:44:A2:C7:76:FF:C5` (add the release key later).
    - Consent screen: add test users.
-   - `.env`: `GOOGLE_CLIENT_ID=<web client id first>`, `GOOGLE_TEACHER_EMAILS=<allowed google accounts>`, `AI_MODE=live`, `LLM_PROVIDER=gemini`, `LLM_API_KEY=<key from aistudio.google.com/apikey>`, optional `GEMINI_CHAT_MODEL` (default `gemini-3.5-flash-lite`; `gemini-2.5-flash` is deprecated and reroutes on 1 Dec 2026).
+   - `.env`: `GOOGLE_CLIENT_ID=<web client id first>`, `GOOGLE_TEACHER_EMAILS=<allowed google accounts>`, `GEMINI_API_KEY=<key from aistudio.google.com/apikey>` (turns on all AI; no other AI keys), optional `GEMINI_CHAT_MODEL` (default `gemini-3.5-flash-lite`; `gemini-2.5-flash` is deprecated and reroutes on 1 Dec 2026).
 2. **Run the unverified checks above** and fix what breaks. For each, note "verified live" in PR #11 before merging it.
 3. **Merge PR #11** once the live checks pass (the owner merges; ask first).
 4. Known gaps worth doing next (small, each its own PR):

@@ -199,5 +199,5 @@ def me(session: AuthToken = Depends(current_session), db: Session = Depends(get_
         t = db.get(Teacher, session.subject_id)
         return {"role": "teacher", "teacher": {"id": t.id, "name": t.name, "email": t.email},
                 "capabilities": {"gemini_assistant": gemini_approved(session) and gemini.enabled(),
-                                 "scan_text": bool(config.GOOGLE_SCAN_API_KEY)}}
+                                 "scan_text": gemini.enabled()}}
     return {"role": "student", "student": serialize.student(db.get(Student, session.subject_id))}

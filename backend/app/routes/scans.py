@@ -21,7 +21,7 @@ from app.ids import new_id
 from app.layout import paper_code, question_types
 from app.models import Assessment, ClassRoom, Scan, Sheet, Student, Teacher
 from app.routes.common import current_scans, own_assessment, sheets_of
-from app.scanner import cloud_text, gemini_reader, omr, pipeline
+from app.scanner import gemini_reader, omr, pipeline, scan_text
 from app.security import current_teacher
 
 router = APIRouter(prefix="/api", tags=["scans"])
@@ -245,13 +245,13 @@ def read_scan_text(scan_id: str, body: ScanTextRequest, teacher: Teacher = Depen
     if not sc:
         raise api_error(404, "not_found", "Scan not found.")
     own_assessment(db, teacher, sc.assessment_id)
-    if not config.GOOGLE_SCAN_API_KEY:
-        raise api_error(503, "scan_text_not_configured", "Google scan text isn't set up. Ask your admin to connect the Google Cloud APIs.")
+    if not gemini.enabled():
+        raise api_error(503, "scan_text_not_configured", "Reading text needs Gemini. Ask your admin to add GEMINI_API_KEY.")
     try:
         image = (SCAN_DIR / f"{sc.id}.jpg").read_bytes()
     except FileNotFoundError:
         raise api_error(404, "scan_photo_not_found", "This scan photo is unavailable. Retake the photo to read its text.") from None
-    return cloud_text.read_photo(image, body.target)
+    return scan_text.read_photo(image, body.target)
 
 
 class ReviewAnswer(BaseModel):

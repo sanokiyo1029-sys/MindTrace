@@ -31,8 +31,10 @@ def issue_token(db: Session, role: str, subject_id: str, *, google_subject: str 
 
 
 def gemini_approved(session: AuthToken) -> bool:
-    # ponytail: admin-managed list, update it when a subscription lapses. OAuth exposes no plan status.
-    return session.role == "teacher" and session.google_subject in config.GEMINI_APPROVED_GOOGLE_SUBS
+    """Every signed-in teacher may use the assistant, unless the admin set GEMINI_APPROVED_GOOGLE_SUBS to limit it."""
+    if session.role != "teacher":
+        return False
+    return not config.GEMINI_APPROVED_GOOGLE_SUBS or session.google_subject in config.GEMINI_APPROVED_GOOGLE_SUBS
 
 
 # HTTPBearer (not a raw Header) so /docs shows an Authorize button; same "Authorization: Bearer" header

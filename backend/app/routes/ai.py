@@ -49,10 +49,10 @@ def ask(prompt: str = Form(""), action: str = Form("ask"), image: UploadFile | N
     if session.role != "teacher":
         raise api_error(401, "unauthorized", "Sign in as a teacher.")
     if not gemini_approved(session):
-        raise api_error(403, "ai_access_required", "Sign in with the Google account your admin approved for Gemini.")
+        raise api_error(403, "ai_access_required", "Your admin limited the AI assistant to approved Google accounts.")
     if not gemini.enabled():
-        raise api_error(503, "ai_not_configured", "Gemini isn't set up on this server yet. Ask the admin to add the "
-                                                  "Gemini API key (LLM_API_KEY) and set AI_MODE=live.")
+        raise api_error(503, "ai_not_configured", "Gemini isn't set up on this server yet. Ask the admin to add "
+                                                  "GEMINI_API_KEY.")
     if action not in ACTIONS:
         raise api_error(400, "bad_action", "Choose Ask, Extract text, Summarize or Describe image.")
     prompt = prompt.strip()

@@ -12,18 +12,19 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BACKEND_DIR / 'mindtrace.d
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", BACKEND_DIR / "media"))
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
-AI_MODE = os.getenv("AI_MODE", "fixtures")
-# Gemini (server side only, never sent to the browser). AI_MODE=live + LLM_PROVIDER=gemini + LLM_API_KEY turns it on.
+# Gemini (server side only, never sent to the browser). ONE key turns on every AI feature: question drafts, reading
+# scanned papers, reading/translating scan text and the assistant. GEMINI_API_KEY is Google's standard name;
+# LLM_API_KEY still works. With a key, AI is on unless AI_MODE=fixtures; without one, labelled samples are used.
+LLM_API_KEY = (os.getenv("GEMINI_API_KEY", "") or os.getenv("LLM_API_KEY", "")).strip()
+AI_MODE = os.getenv("AI_MODE", "").strip() or ("live" if LLM_API_KEY else "fixtures")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
 LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or "gemini-3.5-flash-lite"
-LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
 # Model that reads photographed papers (handwritten roll numbers, bubbles). Defaults to LLM_MODEL.
 LLM_VISION_MODEL = os.getenv("LLM_VISION_MODEL", "").strip() or LLM_MODEL
 # The AI assistant screen (text + image questions). Must be a Gemini model that accepts images, e.g. gemini-3.5-flash-lite.
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "").strip() or LLM_VISION_MODEL
-# Google account IDs manually verified by the admin for assistant access.
+# Optional: limit the AI assistant to these Google account IDs (the ID token's `sub`). Empty = every signed-in teacher.
 GEMINI_APPROVED_GOOGLE_SUBS = set(os.getenv("GEMINI_APPROVED_GOOGLE_SUBS", "").replace(",", " ").split())
-GOOGLE_SCAN_API_KEY = os.getenv("GOOGLE_SCAN_API_KEY", "").strip()
 # Google sign-in: OAuth client ID(s) from Google Cloud, comma-separated (web now, Android later).
 GOOGLE_CLIENT_IDS = [c.strip() for c in os.getenv("GOOGLE_CLIENT_ID", "").split(",") if c.strip()]
 # Google accounts (verified emails) allowed to sign in as the demo teacher, comma-separated.

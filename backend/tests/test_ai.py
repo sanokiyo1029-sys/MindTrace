@@ -68,9 +68,12 @@ def test_only_approved_google_session_has_capability(client, live, approved, mon
     for headers in (login(client), other_google):
         assert not client.get("/api/auth/me", headers=headers).json()["capabilities"]["gemini_assistant"]
         assert _ask(client, headers, prompt="hello").json()["error"] == "ai_access_required"
-    monkeypatch.setattr(config, "GEMINI_APPROVED_GOOGLE_SUBS", set())
-    assert _ask(client, approved, prompt="hello").status_code == 403
     assert not live[0]
+    # no allow-list (the default): every signed-in teacher can use the assistant, password or Google
+    monkeypatch.setattr(config, "GEMINI_APPROVED_GOOGLE_SUBS", set())
+    live[1].append("Hi.")
+    assert client.get("/api/auth/me", headers=login(client)).json()["capabilities"]["gemini_assistant"]
+    assert _ask(client, login(client), prompt="hello").json()["text"] == "Hi."
 
 
 def test_text_prompt_and_free_text_reply(client, live, approved):

@@ -83,7 +83,7 @@ def test_timeout_and_bad_key_fall_back_with_a_reason(live):
     assert "too long" in note
     live["replies"] = [httpx.Response(400, json={"error": {"message": "API key not valid"}}, request=httpx.Request("POST", "https://g"))]
     _, note = ai_bridge.generate_questions("fractions", "x", 1, "7")
-    assert "LLM_API_KEY" in note
+    assert "GEMINI_API_KEY" in note
 
 
 def test_teaching_suggestion_is_cached_and_checked(live):

@@ -27,7 +27,7 @@ The first start creates `mindtrace.db` and the demo data automatically. API docs
 
 **Workflow:** select the assessment → print identical papers (roll-number boxes at the top, no QR, no names) → students write their roll number → photograph each paper → Gemini reads the roll number and the marks → the roll number is matched to **that assessment's class** → the teacher checks and confirms each paper → scores (from the approved answer key) and insights.
 
-**Gemini setup (repo-root `.env`, server only):** `AI_MODE=live`, `LLM_PROVIDER=gemini`, `LLM_API_KEY=<key from https://aistudio.google.com/apikey>`. Optional `LLM_VISION_MODEL` (model for reading photos; defaults to `LLM_MODEL`, which defaults to `gemini-3.5-flash-lite`). Without a key, scanning still works: the bubble reader fills the answers and the teacher types the roll number (labelled "bubble reader" / "manual").
+**Gemini setup (repo-root `.env`, server only):** `GEMINI_API_KEY=<key from https://aistudio.google.com/apikey>` (that one key turns on every AI feature). Optional `LLM_VISION_MODEL` (model for reading photos; defaults to `LLM_MODEL`, which defaults to `gemini-3.5-flash-lite`). Without a key, scanning still works: the bubble reader fills the answers and the teacher types the roll number (labelled "bubble reader" / "manual").
 
 **Live check** (after adding the key): restart, open `/api/health` (expect `"ai_provider":"gemini"`), print one paper, write a roll number and fill some bubbles, photograph it on the Scan papers screen, and compare the review card with the paper.
 

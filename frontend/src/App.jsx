@@ -674,7 +674,7 @@ function ScanTextPreview({ scanId, enabled }) {
   return <details className="scan-text-preview">
     <summary>Read or translate text</summary>
     {!enabled ? <p>{enabled === undefined ? 'Checking availability…' : 'Cloud text recognition is unavailable. You can still transcribe from the photo.'}</p> : <>
-      <p>This sends the scan photo to Google Cloud Vision. Compare the recognized text with the original before using it.</p>
+      <p>This sends the scan photo to Gemini. Compare the recognized text with the original before using it.</p>
       <div className="scan-text-controls">
         <label className="field">Output language<select value={target} disabled={reading} onChange={e => setTarget(e.target.value)}>
           <option value="">Original text</option>

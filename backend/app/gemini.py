@@ -104,7 +104,7 @@ def ask(system: str, prompt: str, schema: dict | None, temperature: float = 0.4,
         if resp.status_code in (500, 503, 504):
             raise GeminiError("unavailable", "Gemini is temporarily unavailable.")
         if resp.status_code in (401, 403) or (resp.status_code == 400 and "API key" in resp.text):
-            raise GeminiError("api_error", "Gemini rejected the API key (check LLM_API_KEY).")
+            raise GeminiError("api_error", "Gemini rejected the API key (check GEMINI_API_KEY).")
         if resp.status_code == 404:
             raise GeminiError("api_error", f"Gemini model '{model}' was not found (check LLM_MODEL / LLM_VISION_MODEL).")
         if resp.status_code >= 400:
