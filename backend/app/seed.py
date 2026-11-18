@@ -51,6 +51,7 @@ def seed(reset: bool = False) -> dict:
         if not t:
             t = Teacher(id="t_demo", email=TEACHER_EMAIL, name="Demo Teacher", password_hash=hash_secret(TEACHER_PASSWORD))
             db.add(t)
+            db.flush()  # write the teacher before inserting the class that references it
         if not db.get(ClassRoom, "cl_7a"):
             db.add(ClassRoom(id="cl_7a", teacher_id=t.id, name="7A", grade="7"))
         db.flush()
@@ -65,6 +66,7 @@ def seed(reset: bool = False) -> dict:
             tt = Teacher(id="t_apk_tester", email=APK_TESTER_EMAIL, name="APK Tester",
                          password_hash=hash_secret(APK_TESTER_PASSWORD))
             db.add(tt)
+            db.flush()
         if not db.get(ClassRoom, "cl_7t"):
             db.add(ClassRoom(id="cl_7t", teacher_id=tt.id, name="7T", grade="7"))
         db.flush()
