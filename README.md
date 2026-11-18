@@ -9,6 +9,7 @@ STEM for Impact 2026 · 24-hour hackathon · Domain: **EdTech: AI for STEM class
 - **Website:** https://mindtrace-preview.vercel.app (forwards to the server below)
 - **Server + website:** https://mindtrace-demo-api.onrender.com (free instance: the first visit can take ~50 s to wake)
 - Demo teacher: `teacher@mindtrace.demo` / `demo1234` · demo students `7A-01`…`7A-05` (fictional; PINs in `backend/app/demo_data.py`)
+- **Android app:** [apk/MindTrace.apk](https://github.com/sanokiyo1029-sys/MindTrace/raw/main/apk/MindTrace.apk) (debug build; uses the website above; allow "install unknown apps")
 - Deploy notes: [docs/DEPLOY.md](docs/DEPLOY.md). Without `DATABASE_URL` the free server forgets data when it restarts.
 
 **Status:** being built at the event. This README lists only what actually works. See [What works](#what-works).
