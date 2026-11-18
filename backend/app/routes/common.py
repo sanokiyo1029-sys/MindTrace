@@ -2,17 +2,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.errors import api_error
-from app.models import Assessment, ClassRoom, Scan, Sheet, Teacher
+from app.models import Assessment, ClassRoom, Exam, Scan, Sheet, Teacher
 
 
-def own_assessment(db: Session, teacher: Teacher, assessment_id: str) -> Assessment:
-    a = db.get(Assessment, assessment_id)
+def own_assessment(db: Session, teacher: Teacher, assessment_id: str, *, lock=False) -> Assessment:
+    a = db.get(Assessment, assessment_id, with_for_update=lock)
     if not a:
         raise api_error(404, "not_found", "Assessment not found.")
     cls = db.get(ClassRoom, a.class_id)
     if not cls or cls.teacher_id != teacher.id:
         raise api_error(403, "forbidden", "This assessment belongs to another teacher.")
     return a
+
+
+def ensure_no_exam(db: Session, assessment_id: str):
+    if db.get(Exam, assessment_id):
+        raise api_error(409, "already_exam", "This assessment is an online exam. Create another assessment for paper or practice.")
 
 
 def sheets_of(db: Session, assessment_id: str) -> list[Sheet]:
