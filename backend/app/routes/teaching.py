@@ -67,11 +67,12 @@ def _sync_feedback(db: Session, a) -> list[Feedback]:
 def _feedback_out(db: Session, f: Feedback, qs: dict, answers: dict) -> dict:
     q, x, stu = qs.get(f.question_id, {}), answers.get((f.scan_id, f.question_id), {}), db.get(Student, f.student_id)
     return {"id": f.id, "student": {"id": stu.id, "display_name": stu.display_name, "roll_no": stu.roll_no},
-            "question_id": f.question_id, "question_type": q.get("type", "mcq"), "stem": q.get("stem", ""),
+            "question_id": f.question_id, "question_type": q.get("type", "mcq"), "written": marking.written(q),
+            "stem": q.get("stem", ""),
             "model_answer": q.get("model_answer"), "correct_answer": q.get("answer"),
             "response": {"final": x.get("final"), "text": x.get("text", ""), "text_state": x.get("text_state"),
                          "crop_url": x.get("reasoning_crop_url") or x.get("crop_url"),
-                         "option_text": (q.get("options") or {}).get(x.get("final"))},
+                         "option_text": marking.options(q).get(x.get("final"))},
             "suggestion": f.suggestion or {"state": "not_requested"}, "concept": f.concept, "text": f.text,
             "video_url": f.video_url, "status": f.status, "version": f.version}
 

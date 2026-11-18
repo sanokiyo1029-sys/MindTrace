@@ -152,11 +152,11 @@ function FeedbackCard({ item, onSaved, flash }) {
   }
   const r = item.response;
   return <Panel className={`feedback-card status-${item.status}`}>
-    <div className="section-heading"><div><span className="eyebrow">ROLL {item.student.roll_no} · {item.question_type === 'descriptive' ? 'WRITTEN ANSWER' : 'BUBBLE ANSWER'}</span><h3>{item.student.display_name}: {item.stem}</h3></div>
+    <div className="section-heading"><div><span className="eyebrow">ROLL {item.student.roll_no} · {(item.written ?? item.question_type === 'descriptive') ? 'WRITTEN ANSWER' : 'BUBBLE ANSWER'}</span><h3>{item.student.display_name}: {item.stem}</h3></div>
       <span className={`status-pill ${item.status === 'approved' ? 'status-complete' : 'status-draft'}`}><span />{{ pending: 'Not shared', approved: 'Approved', dismissed: 'Dismissed' }[item.status]}</span></div>
     <div className="feedback-evidence">
       {r.crop_url && <img src={mediaUrl(r.crop_url)} alt={`${item.student.display_name}'s handwriting for this question`} loading="lazy" />}
-      <div>{item.question_type === 'descriptive' ? <><b>Transcription</b><p className={r.text_state === 'unclear' ? 'unclear' : ''}>{r.text || 'Not transcribed yet.'}</p>{r.text_state === 'unclear' && <small>Some words were unclear. Correct the transcription in Scan review.</small>}{item.model_answer && <small>Your notes: {item.model_answer}</small>}</>
+      <div>{(item.written ?? item.question_type === 'descriptive') ? <><b>Transcription</b><p className={r.text_state === 'unclear' ? 'unclear' : ''}>{r.text || 'Not transcribed yet.'}</p>{r.text_state === 'unclear' && <small>Some words were unclear. Correct the transcription in Scan review.</small>}{item.model_answer && <small>Your notes: {item.model_answer}</small>}</>
         : <><b>Chose {r.final}{r.option_text ? ` (${r.option_text})` : ''}; key {item.correct_answer}</b>{r.text && <p>Reasoning: “{r.text}”</p>}</>}</div>
     </div>
     <div className={`suggestion suggestion-${s.state}`}><span className="eyebrow">{s.source === 'ai' ? 'AI SUGGESTION · CHECK IT' : s.source === 'library' ? 'SUGGESTION FROM THE ANSWER PATTERN' : 'SUGGESTION'}</span>
@@ -176,7 +176,7 @@ export function FeedbackPage({ assessment, flash }) {
   const [items, setItems] = useState([]);
   useEffect(() => { if (data && data !== 'error') setItems(data.items); }, [data]);
   async function ask() { setAsking(true); try { setItems((await api.suggestFeedback(assessment.id)).items); } catch (e) { flash(e.message); } finally { setAsking(false); } }
-  const waiting = items.filter(i => i.question_type === 'descriptive' && i.suggestion?.state !== 'ok' && i.status === 'pending').length;
+  const waiting = items.filter(i => (i.written ?? i.question_type === 'descriptive') && i.suggestion?.state !== 'ok' && i.status === 'pending').length;
   return <><PageHeading eyebrow="STUDENT FEEDBACK · TEACHER APPROVAL" title="Feedback students can learn from." description="Compare each answer with the suggestion, edit it, and approve it. Students only ever see what you approve, after you confirm the results." />
     {!assessment.id ? <Panel className="empty-review"><p>Open an assessment first.</p></Panel> : data === null ? <Loading what="answers" /> : data === 'error' ? <Failed what="answers" retry={reload} /> : <>
       <div className="note-banner" role="status"><Icon name="shield" size={17} /><p>{data.ai_available ? 'AI suggestions need an internet connection. Unclear handwriting is never sent; transcribe it first.' : 'AI isn’t set up on this server, so write the feedback yourself. Everything else works.'}</p>

@@ -52,6 +52,7 @@ def my_results(enrollments: list[Student] = Depends(current_enrollments), sessio
                 mid = ((q.get("distractors") or {}).get(chosen) or {}).get("misconception_id")
                 maybe = lib.get(mid, {}).get("student_friendly")
             answers.append({"question_id": x["question_id"], "type": q.get("type", "mcq"), "stem": q["stem"],
+                            "written": marking.written(q),
                             "options": marking.options(q) or None, "chosen": chosen, "correct": q.get("answer"),
                             "explanation": q.get("explanation"), "maybe": maybe, "text": x.get("text", ""),
                             "concept": q.get("concept", ""), "code": q.get("code"), "image_url": q.get("image_url"),
@@ -80,13 +81,18 @@ def _practice_item(db: Session, asg: Assignment, student: Student) -> dict:
             "assigned_at": asg.created_at.isoformat(), "status": "submitted" if sub else "not_started",
             # no answer key until the student has submitted
             "questions": [{"id": q.id, "type": q.data.get("type", "mcq"), "stem": q.data["stem"],
-                           "options": q.data.get("options")} for q in qs]}
+                           "options": marking.options(q.data) or None, "written": marking.written(q.data),
+                           "hint": marking.paper_lines(q.data), "code": q.data.get("code"),
+                           "image_url": q.data.get("image_url"), "max_score": marking.marks(q.data)} for q in qs]}
     if sub:
         given = {x["question_id"]: x for x in sub.answers}
         item["submitted_at"] = sub.created_at.isoformat()
         item["result"] = [{"question_id": q.id, "chosen": given.get(q.id, {}).get("choice"),
                            "text": given.get(q.id, {}).get("text"), "correct": q.data.get("answer"),
-                           "explanation": q.data.get("explanation")} for q in qs]
+                           "explanation": q.data.get("explanation"),
+                           "score": marking.mark(q.data, given[q.id].get("text") if marking.written(q.data)
+                                                 else given[q.id].get("choice")) if q.id in given else 0.0,
+                           "max_score": marking.marks(q.data)} for q in qs]
     return item
 
 

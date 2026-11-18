@@ -212,3 +212,11 @@ def test_layout_keeps_bubble_questions_readable_and_all_bubble_papers_unchanged(
     mixed = question_blocks(5, ["mcq", "descriptive", "descriptive", "descriptive", "mcq_picture"])
     assert round(mixed[0]["height"], 1) == 41.2 and round(sum(b["height"] for b in mixed), 1) == 206
     assert mixed[4]["height"] > mixed[1]["height"] and mixed[4]["bubbles"] and not mixed[1]["bubbles"]
+
+
+def test_half_filled_answer_key_blocks_approval():
+    q = {"type": "graph", "stem": "Speed at t = 4 s?"}
+    assert marking.style(q) == "manual" and marking.validate(q) == []          # teacher marks it
+    assert "Give the correct numerical answer." in marking.validate(q | {"value": ""})
+    assert "Choose the correct option." in marking.validate(q | {"options": {"A": "4", "B": "8"}})
+    assert "Give at least one accepted answer." in marking.validate(q | {"accepted": [""]})

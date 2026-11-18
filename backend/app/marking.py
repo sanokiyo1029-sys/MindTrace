@@ -60,12 +60,12 @@ def style(q: dict) -> str:
         return "words"
     if t == "numerical":
         return "number"
-    if t in FLEX:
-        if q.get("options") and q.get("answer"):
+    if t in FLEX:  # the teacher picked how it's marked; a half-filled key fails validation instead of going manual
+        if q.get("options"):
             return "choice"
-        if q.get("value") not in (None, ""):
+        if q.get("value") is not None:
             return "number"
-        if q.get("accepted"):
+        if q.get("accepted") is not None:
             return "words"
     return "manual"
 

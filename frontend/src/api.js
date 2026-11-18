@@ -120,6 +120,8 @@ export const api = {
   overview: (classId, subject, understanding = false) => request(`/classes/${classId}/overview?subject=${encodeURIComponent(subject)}${understanding ? '&include_understanding=true' : ''}`),
   studentReport: (id) => request(`/students/${id}/report`),
   addQuestion: (id, body) => request(`/assessments/${id}/questions`, json('POST', body)),
+  questionImage: (id, file) => { const form = new FormData(); form.append('image', file); return request(`/questions/${id}/image`, { method: 'POST', body: form }); },
+  removeQuestionImage: (id) => request(`/questions/${id}/image`, { method: 'DELETE' }),
   feedback: (id) => request(`/assessments/${id}/feedback`),
   suggestFeedback: (id) => request(`/assessments/${id}/feedback/suggest`, { method: 'POST' }),
   editFeedback: (id, body) => request(`/feedback/${id}`, json('PATCH', body)),
