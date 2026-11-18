@@ -2,7 +2,10 @@ import re
 from secrets import token_urlsafe
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
@@ -89,6 +92,18 @@ def _verify_google(credential: str) -> dict:  # tests replace this
     # checks Google's signature, issuer, expiry and that the token was made for one of OUR client IDs
     return id_token.verify_oauth2_token(credential, google_requests.Request(), audience=config.GOOGLE_CLIENT_IDS,
                                         clock_skew_in_seconds=10)
+
+
+@router.post("/google/redirect", include_in_schema=False)
+async def google_redirect(request: Request):
+    """Google's redirect sign-in (no popup, so it works where popups are blocked) posts the ID token here. Check
+    Google's double-submit CSRF cookie, then hand the token back to the page in the URL fragment (browsers never send
+    fragments to servers). The page then signs in through POST /auth/google, which verifies the token as usual."""
+    form = await request.form()
+    credential, csrf = str(form.get("credential") or ""), str(form.get("g_csrf_token") or "")
+    if not credential or not csrf or request.cookies.get("g_csrf_token") != csrf:
+        return RedirectResponse("/login#google_error=csrf", status_code=303)
+    return RedirectResponse(f"/login#google_credential={quote(credential, safe='')}", status_code=303)
 
 
 @router.post("/google")

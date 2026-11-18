@@ -329,10 +329,21 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
 
 
 // "Continue with Google". The server supplies the web client ID and checks every token. Website: Google Identity
-// Services popup. Android app: Google blocks its web
+// Services in REDIRECT mode (the page goes to Google and back; no popup, so blocked popups can't break it). Before
+// leaving, the page remembers the role and sign-up details for that one round trip. Android app: Google blocks its web
 // sign-in inside app web views, so the app uses the native account picker (Credential Manager via
 // @capgo/capacitor-social-login); its ID token is issued for the same web client ID and goes to the same /auth/google.
 const CANCELED = 'Google sign-in was canceled. Choose Continue with Google to try again.';
+const GOOGLE_PENDING = 'mt_google_pending';
+// Back from Google: #google_credential=… (or #google_error=…) is read once and removed from the address bar.
+function takeGoogleReturn() {
+  const h = new URLSearchParams(window.location.hash.slice(1));
+  if (!h.has('google_credential') && !h.has('google_error')) return null;
+  let pending = {};
+  try { pending = JSON.parse(sessionStorage.getItem(GOOGLE_PENDING) || '{}'); sessionStorage.removeItem(GOOGLE_PENDING); } catch { /* storage blocked */ }
+  window.history.replaceState(null, '', (pending.path || '/login') + (pending.search || ''));
+  return { credential: h.get('google_credential'), error: h.get('google_error'), pending };
+}
 let gisScript;
 const loadGis = () => gisScript ||= new Promise((resolve, reject) => {
   const s = Object.assign(document.createElement('script'), { src: 'https://accounts.google.com/gsi/client', async: true });
@@ -348,16 +359,15 @@ function GoogleButton({ role, studentLink, onSession }) {
   const [error, setError] = useState('');
   const link = useRef(studentLink);
   link.current = studentLink;
-  const clickedAt = useRef(0);
-  async function finish(credential) {
+  async function finish(credential, as = { role, student_link: link.current }) {
     if (!active.current || working.current) return;
-    if (link.current && (!link.current.student_code || !link.current.pin)) return;
+    if (as.student_link && (!as.student_link.student_code || !as.student_link.pin)) return;
     working.current = true;
-    clickedAt.current = 0; setState('working'); setError('');
+    setState('working'); setError('');
     try {
-      const r = await api.googleLogin({ credential, role, allow_signup: role === 'teacher', student_link: link.current });
-      if (!r.token || !r[role]) throw new Error('This MindTrace server does not support Google sign-in for this role yet.');
-      if (active.current) onSession({ ...r, role });
+      const r = await api.googleLogin({ credential, role: as.role, allow_signup: as.role === 'teacher', student_link: as.student_link });
+      if (!r.token || !r[as.role]) throw new Error('This MindTrace server does not support Google sign-in for this role yet.');
+      if (active.current) onSession({ ...r, role: as.role });
     } catch (e) {
       if (active.current) { setError(e.message); setState('ready'); }
     } finally { working.current = false; }
@@ -365,6 +375,9 @@ function GoogleButton({ role, studentLink, onSession }) {
   useEffect(() => {
     let live = true;
     active.current = true;
+    const back = takeGoogleReturn();
+    if (back?.error) setError('Google sign-in didn’t complete. Please try again.');
+    if (back?.credential) finish(back.credential, { role: back.pending.role || 'teacher', student_link: back.pending.student_link });
     const load = () => api.authConfig().then(({ google_client_id: id }) => {
       if (!live) return;
       if (!id) { setState('off'); return; }
@@ -372,21 +385,19 @@ function GoogleButton({ role, studentLink, onSession }) {
       if (isNative) { setState('ready'); return; }
       return loadGis().then(() => {
         if (!live || !slot.current) return;
-        window.google.accounts.id.initialize({ client_id: id, auto_select: false, cancel_on_tap_outside: true, context: 'signin', ux_mode: 'popup',
-          callback: ({ credential }) => { if (live) finish(credential); } });
+        window.google.accounts.id.initialize({ client_id: id, auto_select: false, context: 'signin', ux_mode: 'redirect',
+          login_uri: `${window.location.origin}/api/auth/google/redirect` });
         const width = Math.min(300, slot.current.parentElement.clientWidth);
         slot.current.replaceChildren();
         window.google.accounts.id.renderButton(slot.current, { type: 'standard', theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'rectangular', logo_alignment: 'left', width,
-          click_listener: () => { clickedAt.current = Date.now(); setError(''); } });
+          click_listener: () => { setError(''); try { sessionStorage.setItem(GOOGLE_PENDING, JSON.stringify({ role, student_link: link.current,
+            path: window.location.pathname, search: window.location.search })); } catch { /* storage blocked */ } } });
         setState('ready');
       }, () => live && setState('unavailable'));
     }).catch(() => { if (live) setState('disconnected'); });
     load();
-    // Google gives no "popup closed" callback. If the page gets focus back after a click and no credential follows,
-    // the user closed the window or cancelled.
-    const onFocus = () => { const at = clickedAt.current; if (at && Date.now() - at > 800) setTimeout(() => { if (live && clickedAt.current === at) { clickedAt.current = 0; setError(CANCELED); } }, 1500); };
-    addEventListener('focus', onFocus); addEventListener('mt-server', load); // the app's server address was just set
-    return () => { live = false; active.current = false; removeEventListener('focus', onFocus); removeEventListener('mt-server', load); };
+    addEventListener('mt-server', load); // the app's server address was just set
+    return () => { live = false; active.current = false; removeEventListener('mt-server', load); };
   }, []);
   async function nativeSignIn() {
     setState('working'); setError('');

@@ -46,3 +46,15 @@ def test_gemini_is_offered_only_to_a_google_signed_in_teacher(client, monkeypatc
     g = client.post("/api/auth/google", json={"credential": "x", "allow_signup": True}).json()
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {g['token']}"}).json()
     assert me["capabilities"]["gemini_account"] == "new.gemini@gmail.com"
+
+
+def test_google_redirect_checks_csrf_and_hands_token_to_the_page(client):
+    r = client.post("/api/auth/google/redirect", data={"credential": "header.payload.sig", "g_csrf_token": "abc"},
+                    cookies={"g_csrf_token": "abc"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login#google_credential=header.payload.sig"
+    bad = client.post("/api/auth/google/redirect", data={"credential": "x", "g_csrf_token": "abc"},
+                      cookies={"g_csrf_token": "other"}, follow_redirects=False)
+    assert bad.headers["location"] == "/login#google_error=csrf"
+    client.cookies.clear()
+    missing = client.post("/api/auth/google/redirect", data={"credential": "x"}, follow_redirects=False)
+    assert missing.headers["location"] == "/login#google_error=csrf"
