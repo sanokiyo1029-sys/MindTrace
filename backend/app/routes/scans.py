@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import config, gemini, marking, rolls, serialize
+from app import config, gemini, marking, media_store, rolls, serialize
 from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
@@ -40,7 +40,7 @@ def _save(img, name: str, max_side: int = 1600) -> str:
     if max(h, w) > max_side:
         s = max_side / max(h, w)
         img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
-    cv2.imwrite(str(SCAN_DIR / name), img, [cv2.IMWRITE_JPEG_QUALITY, 82])
+    media_store.save(SCAN_DIR / name, cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 82])[1].tobytes())
     return f"/api/media/scans/{name}"
 
 

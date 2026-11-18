@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import media_store
 from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
@@ -25,7 +26,7 @@ def question_picture(name: str, session: AuthToken = Depends(current_session), d
     m = QUESTION_PICTURE.match(name)
     q = db.get(Question, m.group(1)) if m else None
     path = MEDIA_DIR / "questions" / name
-    if not q or not path.is_file() or not (q.data.get("image_url") or "").endswith("/" + name):
+    if not q or not media_store.ensure(path) or not (q.data.get("image_url") or "").endswith("/" + name):
         raise api_error(404, "not_found", "Image not found.")
     class_id = db.get(Assessment, q.assessment_id).class_id
     if session.role == "teacher":
@@ -42,7 +43,7 @@ def scan_image(name: str, session: AuthToken = Depends(current_session), db: Ses
     m = NAME.match(name)
     sc = db.get(Scan, m.group(1)) if m else None
     path = MEDIA_DIR / "scans" / name
-    if not sc or not path.is_file():
+    if not sc or not media_store.ensure(path):
         raise api_error(404, "not_found", "Image not found.")
     a = db.get(Assessment, sc.assessment_id)
     if session.role == "teacher":

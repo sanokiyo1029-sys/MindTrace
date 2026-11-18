@@ -130,6 +130,9 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   const [assessment, setAssessment] = useState(() => isMock ? demo.assessment : emptyAssessment);
   const [insights, setInsights] = useState(() => isMock ? demo.insights : null);
   const [scanProgress, setScanProgress] = useState(() => isMock ? demo.scans : { total: 0, accepted: 0, needs_review: 0, remaining: 0, scans: [] });
+  const [scansState, setScansState] = useState('loading'); // loading | ok | error message: the review queue never claims 'nothing to check' while it doesn't know
+  const [storage, setStorage] = useState(''); // 'temporary' when the server forgets everything on restart (free hosting, no database)
+  useEffect(() => { if (!isMock) api.health().then(h => setStorage(h.storage || ''), () => {}); }, []);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -180,9 +183,8 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   // After a refresh: reopen the assessment the teacher had open.
   useEffect(() => { const id = store.get('mt_assessment'); if (!isMock && teacherToken && id && !assessment.id) openAssessment(id); }, [teacherToken]);
   useEffect(() => { if (!isMock && assessment.id) store.set('mt_assessment', assessment.id); }, [assessment.id]);
-  useEffect(() => {
-    if (!isMock && teacherToken && assessment?.id) api.scans(assessment.id).then(setScanProgress).catch(() => {});
-  }, [assessment?.id, teacherToken]);
+  const loadScans = () => { if (isMock || !teacherToken || !assessment?.id) return; setScansState('loading'); api.scans(assessment.id).then(p => { setScanProgress(p); setScansState('ok'); }, e => setScansState(e.status === 404 ? gone : e.message)); };
+  useEffect(loadScans, [assessment?.id, teacherToken]);
 
   async function openAssessment(id, go = false) {
     try {
@@ -191,7 +193,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
       opened.questions = opened.questions.map(q => { const e = local.find(x => x.id === `question:${q.id}`); return e ? { ...q, ...e.body } : q; });
       setAssessment(opened); setInsights(null); setPdf(null);
       if (go) navigate(typeof go === 'string' ? go : statusScreen[opened.status] || '/workspace');
-    } catch (error) { if (!go) store.set('mt_assessment', ''); flash(error.message); }
+    } catch (error) { if (!go) store.set('mt_assessment', ''); flash(error.status === 404 ? gone : error.message); }
   }
 
   async function generate(values) {
@@ -256,7 +258,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
       setScanProgress(await api.scans(assessment.id));
       return r;
     }
-    catch (error) { flash(error.message); return null; }
+    catch (error) { flash(error.status === 404 ? gone : error.message); return null; }
     finally { setBusy(false); }
   }
 
@@ -280,7 +282,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
         return null;
       }
       if (error.code === 'conflict') api.scans(assessment.id).then(setScanProgress).catch(() => {});
-      flash(error.message); return null;
+      flash(error.status === 404 ? gone : error.message); return null;
     }
   }
   async function confirmScans() {
@@ -291,7 +293,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   }
 
   const sampleTag = isMock && <span className="mode-tag" title="Uses labelled fixture data"><span className="mode-dot" /> Mock mode · sample data, not live</span>;
-  const context = { classes, classesState, loadClasses, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock };
+  const context = { classes, classesState, loadClasses, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock, scansState, loadScans };
 
   const visibleNav = nav;
   const mobileNav = visibleNav.filter(n => n.to !== '/history'); // History is linked from the Overview on phones
@@ -308,7 +310,7 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
     </aside>
     <div className="main-area">
       <header className="topbar"><button className="mobile-brand" onClick={() => navigate('/')} aria-label="MindTrace home"><Wordmark /></button><div className="crumb"><span>Workspace</span><b>/</b><strong>{visibleNav.find(n => n.to === location.pathname)?.label || subPages[location.pathname] || (location.pathname.startsWith('/students/') ? 'Student report' : 'Overview')}</strong></div><div className="top-actions">{sampleTag}{!isMock && <SyncBadge onSynced={onSynced} />}<span className="teacher-chip"><span className="avatar mini">{isMock?'AM':'T'}</span><span>{isMock?'Alex Morgan':'Teacher'}</span></span><button className="text-button" onClick={onSignOut}>{isMock ? 'Exit sample' : 'Sign out'}</button></div></header>
-      <main id="main-content" tabIndex="-1" className="content" aria-busy={loading}><div key={location.pathname} className="page-enter"><Routes>
+      <main id="main-content" tabIndex="-1" className="content" aria-busy={loading}>{storage === 'temporary' && <div className="note-banner conflict-banner" role="alert"><Icon name="shield" size={17}/><p><b>This server forgets papers and scans when it restarts.</b> It runs on free hosting without a database, so a restart (after about 15 idle minutes, or a new deploy) erases assessments, scans and photos. Connect a free database (DATABASE_URL, see docs/DEPLOY.md) before using it with a class.</p></div>}<div key={location.pathname} className="page-enter"><Routes>
         <Route path="/workspace" element={<Dashboard {...context} />} />
         <Route path="/assessment" element={<NewAssessment {...context} />} />
         <Route path="/review" element={<ReviewQuestions {...context} />} />
@@ -539,10 +541,10 @@ function ReviewQuestions({ assessment, setAssessment, approve, busy, generate, i
 }
 
 const paperCode = (id) => (id || '').split('_').slice(1).join('_').toUpperCase() || '—';
-function useRoster(classId, isMock) {
-  const [roster, setRoster] = useState(null);
-  useEffect(() => { if (isMock) { setRoster(demo.roster.map((name, i) => ({ id: `st_0${i + 1}`, display_name: name, roll_no: `0${i + 1}` }))); return; } if (classId) api.students(classId).then(setRoster).catch(() => setRoster([])); }, [classId, isMock]);
-  return roster;
+function useRoster(classId, isMock, withReload = false) {
+  const [roster, setRoster] = useState(null); const [tick, setTick] = useState(0); // null = loading, 'error' = couldn't load
+  useEffect(() => { if (isMock) { setRoster(demo.roster.map((name, i) => ({ id: `st_0${i + 1}`, display_name: name, roll_no: `0${i + 1}` }))); return; } if (classId) { setRoster(null); api.students(classId).then(setRoster).catch(() => setRoster('error')); } }, [classId, isMock, tick]);
+  return withReload ? [roster, () => setTick(x => x + 1)] : roster;
 }
 
 function PrintPage({ assessment, printSheets, busy, isMock, pdf, flash }) {
@@ -553,8 +555,8 @@ function PrintPage({ assessment, printSheets, busy, isMock, pdf, flash }) {
     <h2>{assessment.title || 'Assessment preview'}</h2><p className="paper-instruction">Write your roll number above. Fill ONE bubble per question with a dark pen, then explain why.</p>
     {assessment.questions.slice(0,3).map((q,i)=><div key={q.id} className="paper-question"><b>{i+1}. {q.stem}</b>{isWritten(q)?<div className="reason-line written-box">Write your answer here.<i/><i/><i/></div>:<><div className="paper-options">{Object.entries(optionsOf(q)).map(([key,val])=><span key={key}><i/>{key}. {val}</span>)}</div><div className="reason-line">Why did you choose this answer? (working and notes)<i/><i/></div></>}</div>)}
   </div></Panel><div className="print-note"><Icon name="shield" size={16}/><span>No names or codes identify a student on the paper. Each copy is matched by the roll number the student writes.</span></div></div>
-  <div className="print-side-stack"><Panel className="print-side"><span className="eyebrow">PRINT PREPARATION</span><h2>Class roster</h2><p>{roster?.length ? `${roster.length} students. The PDF has one page per student.` : 'The PDF has one page per student in the class.'}</p>
-    {roster===null?<p className="list-empty" role="status">Loading the class list…</p>:roster.length?<div className="roster-list">{roster.map(s=><div key={s.id}><span className="roster-roll">{s.roll_no||'–'}</span><span>{s.display_name}</span></div>)}</div>:<p className="list-empty">No students found for this class.</p>}
+  <div className="print-side-stack"><Panel className="print-side"><span className="eyebrow">PRINT PREPARATION</span><h2>Class roster</h2><p>{Array.isArray(roster) && roster.length ? `${roster.length} students. The PDF has one page per student.` : 'The PDF has one page per student in the class.'}</p>
+    {roster===null?<p className="list-empty" role="status">Loading the class list…</p>:roster==='error'?<p className="list-empty" role="alert">Couldn’t load the class list. Check the connection and reload.</p>:roster.length?<div className="roster-list">{roster.map(s=><div key={s.id}><span className="roster-roll">{s.roll_no||'–'}</span><span>{s.display_name}</span></div>)}</div>:<p className="list-empty">No students found for this class.</p>}
     <div className="print-requirements"><b>Before you print</b><ul><li>Use A4 paper at 100% scale (no “fit to page”)</li><li>Keep the four corner squares visible</li><li>Tell students to write their roll number in the boxes, one character per box</li><li>Ask students to use a dark pen or pencil</li></ul></div><Button className="full-button" disabled={!approved||busy} onClick={printSheets} icon="printer">{busy?'Preparing papers…':'Generate PDF'}</Button>{!approved&&<small className="disabled-hint">Approve the questions before printing.</small>}
     {pdf&&<p className="pdf-ready" role="status"><Icon name="check" size={15}/> PDF ready ({pdf.pages} page{pdf.pages===1?'':'s'}). <a href={pdf.url} target="_blank" rel="noreferrer">Open to print</a> · <a href={pdf.url} download={pdf.name}>Download again</a></p>}
     {approved&&<Link to="/scanner" className="text-link">Next: scan the completed papers <Icon name="arrow" size={15}/></Link>}</Panel>
@@ -564,10 +566,26 @@ function PrintPage({ assessment, printSheets, busy, isMock, pdf, flash }) {
 const stateText = { single: 'Read', blank: 'No mark', multiple: 'More than one mark', ambiguous: 'Unclear mark', unreadable: 'Not readable' };
 const sourceText = { gemini: 'Read by Gemini', bubble_reader: 'Read by the bubble reader (Gemini unavailable)', manual: 'Manual entry: Gemini couldn’t read it', qr_legacy: 'Older QR-based scan' };
 
+const gone = 'This paper or assessment is no longer on the server. If the server restarted on free hosting without a database, its data was reset: open the assessment again from the Overview, or print a new one.';
+
 function cameraProblem(error) {
   if (error.name === 'NotAllowedError' || error.name === 'SecurityError') return isNative ? 'Camera access was denied. Allow the camera for MindTrace in Android Settings › Apps › MindTrace › Permissions, or use Upload photo.' : 'Camera access was blocked. Allow the camera for this site in your browser settings (the camera icon in the address bar), or use Upload photo.';
   if (error.name === 'NotReadableError' || error.name === 'AbortError') return 'The camera is busy in another app. Close it and try again, or use Upload photo.';
   return 'No camera was found. Upload a photo of the sheet to continue.';
+}
+
+// Phone photos are often 4-12 MB: shrink them (long side 2400 px is plenty for the bubble reader and Gemini) so the
+// upload is quick on mobile data. Anything the browser can't decode (e.g. HEIC) goes up unchanged.
+async function shrink(file) {
+  if (!file?.type?.startsWith('image/') || file.size < 1500000) return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const s = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+    return blob ? new File([blob], 'paper.jpg', { type: 'image/jpeg' }) : file;
+  } catch { return file; }
 }
 
 function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
@@ -600,7 +618,7 @@ function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
     }
   }
   function stopCamera() { streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current=null; setStarted(false); }
-  async function send(file) { if (await upload(file, roll)) setRoll(''); }
+  async function send(file) { if (await upload(await shrink(file), roll)) setRoll(''); }
   async function capture() { const v=videoRef.current; if(!v?.videoWidth) return; setCapturing(true); const c=document.createElement('canvas'); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); c.toBlob(async blob=>{ if(blob) await send(new File([blob],`mindtrace-scan-${Date.now()}.jpg`,{type:'image/jpeg'})); setCapturing(false); },'image/jpeg',0.9); }
   const recent = (scanProgress.scans || []).slice(0, 5);
   return <><PageHeading eyebrow="CLASSROOM SCANNER" title="Bring the paper back to life." description="Capture or upload a paper, then open the review queue to check answers, read text, or translate it." action={<span className="status-pill status-draft"><span/> {assessment.title || 'No assessment open'}</span>}/>
@@ -616,8 +634,8 @@ function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
     <Panel className="recent-scans"><div className="recent-heading"><b>Recent papers</b><Link to="/review-scans">Review queue</Link></div>{isMock?<div className="scan-empty"><span className="empty-ring"><Icon name="scan"/></span><b>Sample mode is on</b><p>Live scans appear when the API is connected.</p></div>:recent.length?<ul className="scan-list">{recent.map(s=><li key={s.scan_id}><b>{s.student?`${s.student.roll_no} · ${s.student.display_name}`:`Roll ${s.roll_number?.read||'?'} · not matched`}</b><span className={`status-pill ${s.status==='accepted'?'status-complete':'status-draft'}`}><span/>{s.status==='accepted'?'Confirmed':'To check'}</span></li>)}</ul>:<div className="scan-empty"><span className="empty-ring"><Icon name="clock"/></span><b>Ready for the first paper</b><p>Scanned papers will appear here.</p></div>}</Panel></aside></div></>;
 }
 
-function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans, busy, isMock }) {
-  const roster = useRoster(assessment.class_id, isMock) || [];
+function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans, busy, isMock, scansState, loadScans }) {
+  const [roster, reloadRoster] = useRoster(assessment.class_id, isMock, true);
   const waiting = [...(scanProgress.scans || []).filter(s => s.status === 'needs_review'), ...(scanProgress.duplicates || [])];
   const clear = waiting.filter(s => s.status === 'needs_review' && s.student && !s.warnings.length && s.answers.every(a => a.final));
   const [bulk, setBulk] = useState(false);
@@ -625,12 +643,14 @@ function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans
   const canConfirm = !isMock && scanProgress.needs_review === 0 && assessment.id;
   return <><PageHeading eyebrow="SCAN REVIEW" title="Check each paper." description="Confirm the student and the answers. Nothing counts towards scores or insights until you do." action={<span className="status-pill status-draft"><span/>{waiting.length} to check</span>}/>
   {clear.length>0&&<div className="note-banner bulk-banner" role="status"><Icon name="check" size={17}/><p>{clear.length} paper{clear.length===1?' has':'s have'} a matched student, no warnings and clear answers.</p><Button variant="outline" disabled={bulk} aria-busy={bulk} onClick={confirmClear}>{bulk?'Confirming…':`Confirm ${clear.length} clear`}</Button></div>}
-  {waiting.length ? waiting.map(scan => <ScanReviewCard key={scan.scan_id} scan={scan} reviewScan={reviewScan} assessment={assessment} roster={roster}/>) : <Panel className="empty-review"><span className="empty-ring"><Icon name={isMock?'clock':'check'} size={22}/></span><h2>{isMock?'Sample mode has no live scans.':'Nothing to check.'}</h2><p>{isMock?'Connect the MindTrace API to scan real papers. The class insights shown in sample mode come from the labelled fixture.':'Scanned papers wait here until you confirm the student and answers.'}</p><Link className="button outline" to="/scanner">Back to scanner</Link></Panel>}
+  {!isMock && (assessment.id || store.get('mt_assessment')) && scansState !== 'ok' ? <Panel className="empty-review">{scansState === 'loading' ? <p role="status">Loading the scanned papers… (a sleeping free server can take up to a minute to wake)</p> : <><p role="alert">{scansState}</p><Button variant="outline" onClick={loadScans}>Try again</Button></>}</Panel>
+  : waiting.length ? waiting.map(scan => <ScanReviewCard key={scan.scan_id} scan={scan} reviewScan={reviewScan} assessment={assessment} roster={roster} reloadRoster={reloadRoster}/>) : <Panel className="empty-review"><span className="empty-ring"><Icon name={isMock?'clock':'check'} size={22}/></span><h2>{isMock?'Sample mode has no live scans.':'Nothing to check.'}</h2><p>{isMock?'Connect the MindTrace API to scan real papers. The class insights shown in sample mode come from the labelled fixture.':'Scanned papers wait here until you confirm the student and answers.'}</p><Link className="button outline" to="/scanner">Back to scanner</Link></Panel>}
   <Panel className="review-policy"><Icon name="shield"/><span><b>You confirm every paper</b><small>Scores and insights use only confirmed answers and your approved answer key.</small></span><Button variant="outline" disabled={!canConfirm||busy} aria-busy={busy} onClick={()=>canConfirm?confirmScans():flash(isMock?'Sample mode does not submit or confirm fixture scans.':'Check every paper before confirming results.', 'info')}>{busy?'Confirming…':'Confirm results'}</Button></Panel></>;
 }
 
 const textStateWord = { clear: 'Read clearly', unclear: 'Unclear handwriting: check every word', missing: 'Nothing written', not_read: 'Not read automatically: type it from the photo', teacher: 'Corrected by you' };
-function ScanReviewCard({ scan, reviewScan, assessment, roster }) {
+function ScanReviewCard({ scan, reviewScan, assessment, roster: rosterState, reloadRoster }) {
+  const roster = Array.isArray(rosterState) ? rosterState : [];
   useOutboxTick();
   const saved = entry(`scan:${scan.scan_id}`); // an edit kept on this device (offline, or waiting to sync)
   const fromSaved = (qid, key) => saved?.body?.answers?.find(a => a.question_id === qid)?.[key];
@@ -656,7 +676,7 @@ function ScanReviewCard({ scan, reviewScan, assessment, roster }) {
     <div className="scan-review-body">
       {scan.image_url&&<a className="scan-photo" href={mediaUrl(scan.image_url)} target="_blank" rel="noreferrer"><img src={mediaUrl(scan.image_url)} alt={`Photo of the paper, roll ${scan.roll_number?.read||'unknown'}`} loading="lazy"/><small>Open full photo</small></a>}
       <div className="scan-review-fields">
-        <label className="field">Student<select value={studentId} onChange={e=>setStudentId(e.target.value)} aria-invalid={!studentId}><option value="">Choose the student…</option>{roster.map(s=><option key={s.id} value={s.id}>{s.roll_no} · {s.display_name}</option>)}</select></label>
+        <label className="field">Student<select value={studentId} onChange={e=>setStudentId(e.target.value)} aria-invalid={!studentId} disabled={!roster.length}><option value="">{rosterState===null?'Loading the class list…':rosterState==='error'?'Class list didn’t load':!roster.length?'No students in this class':'Choose the student…'}</option>{roster.map(s=><option key={s.id} value={s.id}>{s.roll_no} · {s.display_name}</option>)}</select>{rosterState==='error'&&<small role="alert">Couldn’t load the class list. <button type="button" className="text-button" onClick={reloadRoster}>Try again</button></small>}{Array.isArray(rosterState)&&!roster.length&&<small>Add students on the Class &amp; students page, then come back.</small>}{studentId&&studentId!==scan.student?.id&&<small>Saved as this student’s paper when you confirm or save.</small>}</label>
         <div className="scan-answer-review">{scan.answers.map((a,i)=>{const q=assessment.questions.find(item=>item.id===a.question_id); const written=a.type==='descriptive'||(q?isWritten(q):false); const flagged=!a.final||a.text_state==='unclear'; return <div className={`scan-answer-row ${flagged?'flagged':''} ${written?'written-row':''}`} key={a.question_id}>{a.crop_url&&<div className="scan-crop"><img src={mediaUrl(a.crop_url)} alt={`${written?'Written answer':'Answer area'} for question ${i+1}`}/></div>}<div className="scan-answer-info"><b>Q{i+1}. {q?.stem||'Question'}</b>
           {written?<><span>{textStateWord[a.text_state]||''}{a.note?` · ${a.note}`:''}</span><label className="field">Transcription (compare with the photo)<textarea rows="3" value={texts[a.question_id]} onChange={e=>setTexts({...texts,[a.question_id]:e.target.value})} aria-invalid={a.text_state==='unclear'} placeholder="Type what the student wrote"/></label><label className="field">Answer<select value={answers[a.question_id]} aria-invalid={!answers[a.question_id]} onChange={e=>setAnswers({...answers,[a.question_id]:e.target.value})}><option value="">Choose…</option><option value="answered">Answered (transcribed above)</option><option value="blank">Blank (no answer)</option></select></label><MarkField answer={a} value={scores[a.question_id]} onChange={v=>setScores({...scores,[a.question_id]:v})}/></>
           :<><span>{stateText[a.state]||a.state}{a.state==='single'?` ${a.detected}`:''}{a.note?` · ${a.note}`:''}</span><label className="field">Answer<select value={answers[a.question_id]} aria-invalid={!answers[a.question_id]} onChange={e=>setAnswers({...answers,[a.question_id]:e.target.value})}><option value="">Choose…</option>{['A','B','C','D','blank'].map(option=><option key={option} value={option}>{option==='blank'?'Blank (no answer)':`${option} · ${optionsOf(q)[option]||''}`}</option>)}</select></label>
@@ -681,7 +701,7 @@ function LensPanel({ imageUrl }) {
     setMsg('');
     if (isNative) {
       window.location.href = 'googleapp://lens';
-      setMsg('Google Lens opens in the Google app. Point it at the paper, then tap Text to copy or translate it.');
+      setMsg('Google Lens opens in the Google app. Point it at the paper, tap Text, copy what you need and paste it into the transcription here. If nothing opened, install or update the Google app, or open lens.google.com.');
       return;
     }
     if (isPhone() && navigator.canShare) {

@@ -1,7 +1,7 @@
 """Tables. Shapes returned by the API are built in app/serialize.py to match docs/CONTRACTS.md."""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -79,6 +79,13 @@ class Assessment(Base):
     parent_assessment_id: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[list] = mapped_column(JSON, default=list)        # e.g. ["Using saved sample questions (AI unavailable)"]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class MediaBlob(Base):
+    """Copy of a media file (scan photo, crop, question picture) so it survives a wiped disk (see media_store)."""
+    __tablename__ = "media_blobs"
+    name: Mapped[str] = mapped_column(String, primary_key=True)  # path under MEDIA_DIR, e.g. "scans/sc_x.jpg"
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class Question(Base):

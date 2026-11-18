@@ -9,6 +9,11 @@ REPO_ROOT = BACKEND_DIR.parent
 load_dotenv(REPO_ROOT / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BACKEND_DIR / 'mindtrace.db'}")
+# Hosted Postgres (Neon, Supabase, Render) hands out postgres://... URLs; SQLAlchemy needs the psycopg driver named.
+if DATABASE_URL.startswith(("postgres://", "postgresql://")):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
+# On Render (RENDER is set) the disk is wiped on every restart/deploy, so SQLite there loses all papers and scans.
+PERSISTENT_STORAGE = not (DATABASE_URL.startswith("sqlite") and os.getenv("RENDER"))
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", BACKEND_DIR / "media"))
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")

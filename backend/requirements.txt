@@ -1,6 +1,7 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 sqlalchemy>=2.0
+psycopg[binary]>=3.1     # only used when DATABASE_URL points at Postgres
 python-multipart>=0.0.9
 python-dotenv>=1.0
 reportlab>=4.0

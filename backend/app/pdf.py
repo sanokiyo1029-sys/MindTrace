@@ -9,7 +9,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 
-from app import marking
+from app import marking, media_store
 from app.config import MEDIA_DIR
 from app.layout import base, paper_code, question_blocks, question_types
 
@@ -127,7 +127,7 @@ def _draw_sheet(c: canvas.Canvas, *, assessment: dict, questions: list[dict], pa
 def _picture(c: canvas.Canvas, url: str | None, box) -> float:
     """The question's picture at the right of `box`; returns the width (mm) it took, 0 if none."""
     path = MEDIA_DIR / "questions" / str(url or "").rsplit("/", 1)[-1]
-    if not url or not path.is_file():
+    if not url or not media_store.ensure(path):
         return 0
     img = ImageReader(str(path))
     w, h = img.getSize()

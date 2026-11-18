@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import ai_bridge, insights, marking, serialize
+from app import ai_bridge, insights, marking, media_store, serialize
 from app.config import MEDIA_DIR
 from app.db import get_db
 from app.errors import api_error
@@ -131,7 +131,7 @@ MAX_PICTURE_BYTES = 6 * 1024 * 1024
 def _set_picture(db: Session, q: Question, a: Assessment, url: str | None) -> dict:
     old = (q.data.get("image_url") or "").rsplit("/", 1)[-1]
     if old:
-        (MEDIA_DIR / "questions" / old).unlink(missing_ok=True)
+        media_store.delete(MEDIA_DIR / "questions" / old)
     data = {k: v for k, v in q.data.items() if k != "image_url"} | ({"image_url": url} if url else {})
     data["version"] = data.get("version", 1) + 1
     q.data, q.status, a.status = data, "draft", "draft"
@@ -155,7 +155,7 @@ def question_picture(question_id: str, image: UploadFile = File(...), teacher: T
         img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     name = f"{q.id}_{q.data.get('version', 1) + 1}.jpg"
     ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    (MEDIA_DIR / "questions" / name).write_bytes(jpg.tobytes())
+    media_store.save(MEDIA_DIR / "questions" / name, jpg.tobytes())
     return _set_picture(db, q, a, f"/api/media/questions/{name}")
 
 
