@@ -30,13 +30,6 @@ def issue_token(db: Session, role: str, subject_id: str, *, google_subject: str 
     return tok
 
 
-def gemini_approved(session: AuthToken) -> bool:
-    """Every signed-in teacher may use the assistant, unless the admin set GEMINI_APPROVED_GOOGLE_SUBS to limit it."""
-    if session.role != "teacher":
-        return False
-    return not config.GEMINI_APPROVED_GOOGLE_SUBS or session.google_subject in config.GEMINI_APPROVED_GOOGLE_SUBS
-
-
 # HTTPBearer (not a raw Header) so /docs shows an Authorize button; same "Authorization: Bearer" header
 bearer = HTTPBearer(auto_error=False)
 

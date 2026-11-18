@@ -14,7 +14,7 @@ from app.db import get_db
 from app.errors import api_error
 from app.ids import new_id
 from app.models import AuthToken, Student, Teacher
-from app.security import bearer, check_secret, current_session, gemini_approved, hash_secret, issue_token
+from app.security import bearer, check_secret, current_session, hash_secret, issue_token
 from app.seed import TEACHER_EMAIL
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -198,6 +198,6 @@ def me(session: AuthToken = Depends(current_session), db: Session = Depends(get_
     if session.role == "teacher":
         t = db.get(Teacher, session.subject_id)
         return {"role": "teacher", "teacher": {"id": t.id, "name": t.name, "email": t.email},
-                "capabilities": {"gemini_assistant": gemini_approved(session) and gemini.enabled(),
-                                 "scan_text": gemini.enabled()}}
+                # Gemini opens in the teacher's own Google account (no MindTrace key), so it needs a Google sign-in.
+                "capabilities": {"gemini_account": t.email if session.google_subject else None}}
     return {"role": "student", "student": serialize.student(db.get(Student, session.subject_id))}

@@ -98,7 +98,6 @@ export const api = {
   scans: (id) => request(`/assessments/${id}/scans`),
   uploadScan: (id, file, rollNumber) => { const form = new FormData(); form.append('image', file); if (rollNumber?.trim()) form.append('roll_number', rollNumber.trim()); return request(`/assessments/${id}/scans`, { method: 'POST', body: form }); },
   reviewScan: (id, body) => request(`/scans/${id}/review`, json('PATCH', body)),
-  scanText: (id, target) => request(`/scans/${id}/text`, json('POST', { target: target || null })),
   confirm: (id) => request(`/assessments/${id}/confirm`, { method: 'POST' }),
   insights: (id) => request(`/assessments/${id}/insights`),
   followup: (id, body) => request(`/assessments/${id}/followup`, json('POST', body)),
@@ -117,7 +116,6 @@ export const api = {
   practiceStatus: (id) => request(`/assessments/${id}/practice`),
   studentPractice: (token) => request('/student/me/practice', { headers: { Authorization: `Bearer ${token}` } }),
   submitPractice: (token, id, body) => request(`/student/me/practice/${id}`, { ...json('POST', body), headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }),
-  aiAsk: (form) => request('/ai/ask', { method: 'POST', body: form }),
   // generic call used by the offline outbox to replay a saved change
   send: (method, path, body) => request(path, json(method, body)),
 };

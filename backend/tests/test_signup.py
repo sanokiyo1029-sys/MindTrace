@@ -31,3 +31,18 @@ def test_signup_validation(client):
     assert _signup(client, email="x2@example.com", password="12345678").json()["error"] == "weak_password"
     assert _signup(client, email="x3@example.com", name="   ").json()["error"] == "bad_name"
     assert client.post("/api/classes", json={"name": "9A"}).status_code == 401
+
+
+def test_gemini_is_offered_only_to_a_google_signed_in_teacher(client, monkeypatch):
+    """No MindTrace key: Gemini opens in the teacher's own Google account, so a password session doesn't get it."""
+    from app import config
+    from app.routes import auth
+    pw = client.post("/api/auth/teacher/login", json={"email": "teacher@mindtrace.demo", "password": "demo1234"}).json()
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {pw['token']}"}).json()
+    assert me["capabilities"]["gemini_account"] is None
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_IDS", ["test-client"])
+    monkeypatch.setattr(auth, "_verify_google", lambda c: {"sub": "g-sub-gemini", "email": "new.gemini@gmail.com",
+                                                          "email_verified": True, "name": "Gem Teacher"})
+    g = client.post("/api/auth/google", json={"credential": "x", "allow_signup": True}).json()
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {g['token']}"}).json()
+    assert me["capabilities"]["gemini_account"] == "new.gemini@gmail.com"

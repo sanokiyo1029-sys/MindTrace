@@ -7,7 +7,7 @@ import { ClassOverview, FeedbackPage, HistoryPage, PracticePanel, Recommendation
 import Auth from './Auth.jsx';
 import Landing, { SiteHeader, Wordmark } from './Landing.jsx';
 import StudentHome from './StudentHome.jsx';
-import AiPage from './AiPage.jsx';
+import AiPage, { copyImage } from './AiPage.jsx';
 import PaperSurface from './PaperSurface.jsx';
 import Icon from './Icon.jsx';
 
@@ -16,7 +16,7 @@ const nav = [
   { to: '/workspace', label: 'Overview', icon: 'grid' }, { to: '/assessment', label: 'Create assessment', icon: 'plus' },
   { to: '/scanner', label: 'Scan papers', icon: 'scan' }, { to: '/insights', label: 'Class insights', icon: 'chart' },
   { to: '/recommendations', label: 'Teaching recommendations', icon: 'book' }, { to: '/history', label: 'History', icon: 'clock' },
-  { to: '/ai', label: 'AI assistant', icon: 'spark' },
+  { to: '/ai', label: 'Gemini', icon: 'spark' },
 ];
 // After signing in, go back to the page that asked for it (e.g. /ai). Same-site paths only.
 const nextPath = () => { const n = new URLSearchParams(window.location.search).get('next') || ''; return /^\/(?!\/)[\w\-/]*$/.test(n) ? n : ''; };
@@ -287,10 +287,9 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
   }
 
   const sampleTag = isMock && <span className="mode-tag" title="Uses labelled fixture data"><span className="mode-dot" /> Mock mode · sample data, not live</span>;
-  const scanText = capabilities === null && !isMock ? undefined : capabilities?.scan_text === true;
-  const context = { classes, classesState, loadClasses, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock, scanText };
+  const context = { classes, classesState, loadClasses, classId, setClassId, subject, setSubject, onSynced, pdf, assessment, setAssessment, insights, setInsights, scanProgress, setScanProgress, openAssessment, busy, generate, approve, printSheets, upload, loadInsights, reviewScan, confirmScans, flash, navigate, isMock };
 
-  const visibleNav = nav.filter(n => n.to !== '/ai' || capabilities?.gemini_assistant === true);
+  const visibleNav = nav;
   const mobileNav = visibleNav.filter(n => n.to !== '/history'); // History is linked from the Overview on phones
   return <div className="shell workspace-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
@@ -317,8 +316,8 @@ function TeacherWorkspace({ isMock, teacherToken, onSignOut }) {
         <Route path="/recommendations" element={<RecommendationsPage {...context} />} />
         <Route path="/feedback" element={<FeedbackPage {...context} />} />
         <Route path="/history" element={<HistoryPage {...context} />} />
-        <Route path="/ai" element={capabilities?.gemini_assistant ? <AiPage flash={flash} />
-          : capabilities === null && !isMock ? <p role="status">Checking your access…</p> : <Navigate to="/workspace" replace />} />
+        <Route path="/ai" element={capabilities === null && !isMock ? <p role="status">Checking your account…</p>
+          : <AiPage account={capabilities?.gemini_account} flash={flash} onSignOut={onSignOut} />} />
         <Route path="/students/:id" element={<StudentReportPage />} />
         <Route path="*" element={<Navigate to="/workspace" replace />} />
       </Routes></div></main>
@@ -599,7 +598,7 @@ function Scanner({ assessment, upload, busy, scanProgress, isMock }) {
     <Panel className="recent-scans"><div className="recent-heading"><b>Recent papers</b><Link to="/review-scans">Review queue</Link></div>{isMock?<div className="scan-empty"><span className="empty-ring"><Icon name="scan"/></span><b>Sample mode is on</b><p>Live scans appear when the API is connected.</p></div>:recent.length?<ul className="scan-list">{recent.map(s=><li key={s.scan_id}><b>{s.student?`${s.student.roll_no} · ${s.student.display_name}`:`Roll ${s.roll_number?.read||'?'} · not matched`}</b><span className={`status-pill ${s.status==='accepted'?'status-complete':'status-draft'}`}><span/>{s.status==='accepted'?'Confirmed':'To check'}</span></li>)}</ul>:<div className="scan-empty"><span className="empty-ring"><Icon name="clock"/></span><b>Ready for the first paper</b><p>Scanned papers will appear here.</p></div>}</Panel></aside></div></>;
 }
 
-function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans, busy, isMock, scanText }) {
+function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans, busy, isMock }) {
   const roster = useRoster(assessment.class_id, isMock) || [];
   const waiting = [...(scanProgress.scans || []).filter(s => s.status === 'needs_review'), ...(scanProgress.duplicates || [])];
   const clear = waiting.filter(s => s.status === 'needs_review' && s.student && !s.warnings.length && s.answers.every(a => a.final));
@@ -608,12 +607,12 @@ function ReviewScans({ scanProgress, assessment, flash, reviewScan, confirmScans
   const canConfirm = !isMock && scanProgress.needs_review === 0 && assessment.id;
   return <><PageHeading eyebrow="SCAN REVIEW" title="Check each paper." description="Confirm the student and the answers. Nothing counts towards scores or insights until you do." action={<span className="status-pill status-draft"><span/>{waiting.length} to check</span>}/>
   {clear.length>0&&<div className="note-banner bulk-banner" role="status"><Icon name="check" size={17}/><p>{clear.length} paper{clear.length===1?' has':'s have'} a matched student, no warnings and clear answers.</p><Button variant="outline" disabled={bulk} aria-busy={bulk} onClick={confirmClear}>{bulk?'Confirming…':`Confirm ${clear.length} clear`}</Button></div>}
-  {waiting.length ? waiting.map(scan => <ScanReviewCard key={scan.scan_id} scan={scan} reviewScan={reviewScan} assessment={assessment} roster={roster} scanText={scanText}/>) : <Panel className="empty-review"><span className="empty-ring"><Icon name={isMock?'clock':'check'} size={22}/></span><h2>{isMock?'Sample mode has no live scans.':'Nothing to check.'}</h2><p>{isMock?'Connect the MindTrace API to scan real papers. The class insights shown in sample mode come from the labelled fixture.':'Scanned papers wait here until you confirm the student and answers.'}</p><Link className="button outline" to="/scanner">Back to scanner</Link></Panel>}
+  {waiting.length ? waiting.map(scan => <ScanReviewCard key={scan.scan_id} scan={scan} reviewScan={reviewScan} assessment={assessment} roster={roster}/>) : <Panel className="empty-review"><span className="empty-ring"><Icon name={isMock?'clock':'check'} size={22}/></span><h2>{isMock?'Sample mode has no live scans.':'Nothing to check.'}</h2><p>{isMock?'Connect the MindTrace API to scan real papers. The class insights shown in sample mode come from the labelled fixture.':'Scanned papers wait here until you confirm the student and answers.'}</p><Link className="button outline" to="/scanner">Back to scanner</Link></Panel>}
   <Panel className="review-policy"><Icon name="shield"/><span><b>You confirm every paper</b><small>Scores and insights use only confirmed answers and your approved answer key.</small></span><Button variant="outline" disabled={!canConfirm||busy} aria-busy={busy} onClick={()=>canConfirm?confirmScans():flash(isMock?'Sample mode does not submit or confirm fixture scans.':'Check every paper before confirming results.', 'info')}>{busy?'Confirming…':'Confirm results'}</Button></Panel></>;
 }
 
 const textStateWord = { clear: 'Read clearly', unclear: 'Unclear handwriting: check every word', missing: 'Nothing written', not_read: 'Not read automatically: type it from the photo', teacher: 'Corrected by you' };
-function ScanReviewCard({ scan, reviewScan, assessment, roster, scanText }) {
+function ScanReviewCard({ scan, reviewScan, assessment, roster }) {
   useOutboxTick();
   const saved = entry(`scan:${scan.scan_id}`); // an edit kept on this device (offline, or waiting to sync)
   const fromSaved = (qid, key) => saved?.body?.answers?.find(a => a.question_id === qid)?.[key];
@@ -633,7 +632,7 @@ function ScanReviewCard({ scan, reviewScan, assessment, roster, scanText }) {
   return <Panel className="scan-review-card"><div className="scan-review-head"><div><span className="eyebrow">ROLL {scan.roll_number?.read || '—'} · {sourceText[scan.extracted_by] || 'Scanned paper'}</span><h2>{scan.student ? `${scan.student.display_name}` : 'Who is this?'}</h2></div><span className={`status-pill ${dup?'status-fixture':'status-draft'}`}><span/>{dup?'Already confirmed':'To check'}</span></div>
     {saved&&<p className={`sync-chip sync-${saved.status}`} role="status">{syncWord[saved.status]}{saved.status==='conflict'?': this paper was changed elsewhere. Reload the queue to see the newer version, then apply your change.':''}{saved.error&&saved.status!=='conflict'?` (${saved.error})`:''}</p>}
     {scan.warnings.length>0&&<ul className="scan-warnings">{scan.warnings.map(w=><li key={w.code}>{w.message}</li>)}</ul>}
-    {scan.image_url && <ScanTextPreview scanId={scan.scan_id} enabled={scanText} />}
+    {scan.image_url && <LensPanel imageUrl={scan.image_url} />}
     <div className="scan-review-body">
       {scan.image_url&&<a className="scan-photo" href={mediaUrl(scan.image_url)} target="_blank" rel="noreferrer"><img src={mediaUrl(scan.image_url)} alt={`Photo of the paper, roll ${scan.roll_number?.read||'unknown'}`} loading="lazy"/><small>Open full photo</small></a>}
       <div className="scan-review-fields">
@@ -649,47 +648,43 @@ function ScanReviewCard({ scan, reviewScan, assessment, roster, scanText }) {
   </Panel>;
 }
 
-const scanLanguages = { en: 'English', hi: 'Hindi', ta: 'Tamil', te: 'Telugu', kn: 'Kannada', ml: 'Malayalam',
-  bn: 'Bengali', mr: 'Marathi', ur: 'Urdu', es: 'Spanish', fr: 'French' };
-
-function ScanTextPreview({ scanId, enabled }) {
-  const [target, setTarget] = useState('');
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
-  const [reading, setReading] = useState(false);
-
-  async function read() {
-    setReading(true);
-    setError('');
-    setResult(null);
-    try {
-      setResult({ ...await api.scanText(scanId, target), target });
-    } catch (e) {
-      setError(e.offline ? 'Text recognition and translation need an internet connection. Try again when connected.' : e.message);
-    } finally {
-      setReading(false);
+// Google Lens has no public API and refuses uploads from other websites, so MindTrace hands the photo to Lens the
+// official ways: phones share it (choose Google Lens), computers copy it and paste it into lens.google.com, and the
+// Android app opens Lens's own camera. Lens reads and translates; the teacher copies what they need. Nothing auto-fills.
+const isPhone = () => /Android|iPhone|iPad/i.test(navigator.userAgent);
+function LensPanel({ imageUrl }) {
+  const [msg, setMsg] = useState('');
+  const photo = useRef(null);
+  const load = () => photo.current ||= fetch(mediaUrl(imageUrl)).then(r => { if (!r.ok) throw new Error('Couldn’t load the photo.'); return r.blob(); });
+  useEffect(() => { if (!isNative && isPhone() && navigator.canShare) load().catch(() => {}); }, [imageUrl]); // ready before the tap
+  async function lens() {
+    setMsg('');
+    if (isNative) {
+      window.location.href = 'googleapp://lens';
+      setMsg('Google Lens opens in the Google app. Point it at the paper, then tap Text to copy or translate it.');
+      return;
     }
+    if (isPhone() && navigator.canShare) {
+      try {
+        const blob = await load();
+        const file = new File([blob], 'mindtrace-paper.jpg', { type: blob.type || 'image/jpeg' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          setMsg('Choose Google Lens (or Google) in the share list, then tap Text to copy or translate.');
+          return;
+        }
+      } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const copied = copyImage(load()); // copy inside the click, then open Lens
+    window.open('https://lens.google.com/', '_blank', 'noopener');
+    copied.then(() => setMsg('Photo copied. In the Google Lens tab press Ctrl+V (⌘V on Mac) to paste it, then choose Text to copy or translate.'),
+      () => setMsg('Open the full photo, right-click it and choose “Search with Google Lens” (Chrome), then choose Text.'));
   }
-
-  return <details className="scan-text-preview">
-    <summary>Read or translate text</summary>
-    {!enabled ? <p>{enabled === undefined ? 'Checking availability…' : 'Cloud text recognition is unavailable. You can still transcribe from the photo.'}</p> : <>
-      <p>This sends the scan photo to Gemini. Compare the recognized text with the original before using it.</p>
-      <div className="scan-text-controls">
-        <label className="field">Output language<select value={target} disabled={reading} onChange={e => setTarget(e.target.value)}>
-          <option value="">Original text</option>
-          {Object.entries(scanLanguages).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-        </select></label>
-        <Button variant="outline" disabled={reading} onClick={read}>{target ? 'Read and translate' : 'Read text'}</Button>
-      </div>
-      {reading && <p role="status">Reading the paper…</p>}
-      {error && <p className="field-error" role="alert">{error}</p>}
-      {result?.text && <label className="field">Recognized text<textarea rows="4" readOnly value={result.text} /></label>}
-      {result && !result.text && <p role="status">No readable text found. Try a sharper photo.</p>}
-      {result?.translation && <label className="field">{scanLanguages[result.target]} translation<textarea rows="4" readOnly value={result.translation} /></label>}
-      {result?.translation_error && <p className="field-error" role="alert">{result.translation_error}</p>}
-    </>}
-  </details>;
+  return <div className="lens-panel">
+    <Button variant="outline" icon="scan" onClick={lens}>Read with Google Lens</Button>
+    <small>Lens reads and translates the handwriting. Copy what you need into the transcription; nothing is filled in automatically.</small>
+    {msg && <p role="status" className="lens-msg">{msg}</p>}
+  </div>;
 }
 
 function InsightsPage({ assessment, insights, loadInsights, busy, isMock }) {

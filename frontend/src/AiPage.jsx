@@ -1,105 +1,94 @@
-// AI assistant: ask Gemini about text and/or one photo or screenshot. The server holds the Gemini key; this screen only
-// uses the teacher's approved Google sign-in session. Same code on the website and in the app.
+// Gemini, without any MindTrace API key: MindTrace prepares the question (and image) and opens gemini.google.com in a
+// popup signed in as the teacher's own Google account. Whatever that account's plan includes (for example a Gemini
+// subscription) is what they get: Google applies it, not MindTrace. Google sign-in doesn't tell apps whether an account
+// has a subscription, so MindTrace can't check it; it only makes sure Gemini opens as the account the teacher signed in with.
 import { useEffect, useRef, useState } from 'react';
-import { api } from './api.js';
+import { isNative } from './api.js';
 import Icon from './Icon.jsx';
 import { Button, PageHeading, Panel } from './ui.jsx';
 
-const MAX_BYTES = 10 * 1024 * 1024; // the server's limit too
-const TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
-const LABEL = { ask: 'Answer', extract: 'Extracted text', summarize: 'Summary', describe: 'Image description' };
-const BUSY = { ask: 'Thinking…', extract: 'Reading the text…', summarize: 'Summarizing…', describe: 'Looking at the image…' };
+const MAX_BYTES = 10 * 1024 * 1024;
+const TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ACTIONS = {
+  extract: 'Extract all text from the attached image exactly as written. Keep the wording and line breaks. Mark anything you cannot read as [unreadable].',
+  summarize: 'Summarize the attached image (or the text below) in a few short bullet points a teacher can act on.',
+  describe: 'Describe what the attached image shows, clearly and factually. Mention any visible text.',
+};
 
-function checkImage(file) {
-  const type = file.type || ({ heic: 'image/heic', heif: 'image/heif' })[file.name.split('.').pop()?.toLowerCase()] || '';
-  if (!TYPES.includes(type)) return 'That file isn’t a supported image. Use a JPG, PNG, WebP or HEIC photo or screenshot.';
-  if (file.size > MAX_BYTES) return `That image is ${(file.size / 1048576).toFixed(1)} MB; the limit is 10 MB. Use a screenshot or a smaller photo.`;
-  return '';
+export const geminiUrl = (account) => `https://gemini.google.com/app${account ? `?authuser=${encodeURIComponent(account)}` : ''}`;
+
+// Images go to the clipboard as PNG (what browsers allow), so the teacher can paste them into Gemini or Lens.
+export async function toPng(blob) {
+  if (blob.type === 'image/png') return blob;
+  const bitmap = await createImageBitmap(blob);
+  const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Couldn’t prepare the image.')), 'image/png'));
+}
+export function copyImage(blobPromise) { // call straight from a click, before opening any window
+  if (!window.ClipboardItem || !navigator.clipboard?.write) return Promise.reject(new Error('This browser can’t copy images.'));
+  return navigator.clipboard.write([new ClipboardItem({ 'image/png': Promise.resolve(blobPromise).then(toPng) })]);
 }
 
-async function copy(text, flash) {
-  try { await navigator.clipboard.writeText(text); flash('Copied.', 'success'); }
-  catch { flash('Couldn’t copy automatically. Select the text and copy it.', 'info'); }
-}
-
-export default function AiPage({ flash }) {
+export default function AiPage({ account, flash, onSignOut }) {
   const [prompt, setPrompt] = useState('');
-  const [image, setImage] = useState(null); // { file, url, previewFailed }
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState(null); // { message, retry: action | null }
-  const [replies, setReplies] = useState([]);
+  const [image, setImage] = useState(null); // { file, url }
+  const [step, setStep] = useState('');
   const fileRef = useRef(null);
-  const sending = useRef(false); // blocks a second request while one is loading (double taps too)
-
   useEffect(() => () => { if (image) URL.revokeObjectURL(image.url); }, [image]);
+
+  if (!account) return <>
+    <PageHeading eyebrow="GEMINI" title="Use Gemini with your own Google account." description="MindTrace doesn’t use an API key for Gemini. It opens Gemini as the Google account you sign in with, so your own plan applies." />
+    <Panel className="ai-panel"><h2>Sign in with Google to use Gemini</h2>
+      <p>You signed in with an email and password. Sign out, then choose “Continue with Google” with the Google account that has your Gemini plan.</p>
+      <Button onClick={onSignOut} icon="arrow">Sign out and continue with Google</Button></Panel>
+  </>;
 
   function attach(file) {
     if (!file) return;
-    const problem = checkImage(file);
-    if (problem) { setError({ message: problem }); return; }
-    setError(null);
+    if (!TYPES.includes(file.type)) return flash('Use a JPG, PNG or WebP image.');
+    if (file.size > MAX_BYTES) return flash('That image is over 10 MB. Use a screenshot or a smaller photo.');
     setImage({ file, url: URL.createObjectURL(file) });
   }
-  function onPaste(e) { // a pasted screenshot becomes the attachment
+  function onPaste(e) {
     const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
     if (item) { e.preventDefault(); attach(item.getAsFile()); }
   }
-
-  async function send(action = 'ask') {
-    if (sending.current) return;
-    const text = prompt.trim();
-    if ((action === 'extract' || action === 'describe') && !image) return setError({ message: 'Attach a photo or screenshot first.' });
-    if (!text && !image) return setError({ message: 'Type a question or attach an image.' });
-    sending.current = true; setBusy(action); setError(null);
-    try {
-      const form = new FormData();
-      form.append('action', action); form.append('prompt', text);
-      if (image) form.append('image', image.file, image.file.name || 'image');
-      const r = await api.aiAsk(form);
-      setReplies(list => [{ id: Date.now(), action, prompt: text, thumb: image && !image.previewFailed ? URL.createObjectURL(image.file) : null, text: r.text, truncated: r.truncated }, ...list]);
-      setPrompt(''); // the image stays attached for a follow-up question; remove it with ×
-    } catch (e) {
-      // keep the prompt and the attachment so Try again sends exactly the same request
-      setError({ message: e.offline ? 'You’re offline or the server can’t be reached. Gemini needs an internet connection; your question and image are kept.' : e.message,
-        retry: e.offline || e.retryable ? action : null });
-    } finally { sending.current = false; setBusy(''); }
+  function openGemini(text) {
+    // Copy first (needs this page focused), then open the popup in the same click.
+    const copied = text ? navigator.clipboard?.writeText(text) : copyImage(image.file);
+    window.open(geminiUrl(account), isNative ? '_blank' : 'mindtrace-gemini', isNative ? undefined : 'popup,width=560,height=820');
+    Promise.resolve(copied).then(() => setStep(text ? (image ? 'text-then-image' : 'text') : 'image'),
+      () => setStep('manual'));
   }
+  const question = (action) => [ACTIONS[action], prompt.trim()].filter(Boolean).join('\n\n');
 
   return <>
-    <PageHeading eyebrow="AI ASSISTANT · GEMINI" title="Ask about a lesson, a photo or a screenshot."
-      description="Type a question, attach an image, or both. Answers are drafts for you to check, never facts about a student." />
+    <PageHeading eyebrow="GEMINI · YOUR GOOGLE ACCOUNT" title="Ask Gemini about a lesson, a photo or a screenshot."
+      description={`Opens Gemini as ${account}. No MindTrace API key; your Google plan applies.`} />
     <Panel className="ai-panel">
       <div className="ai-actions" role="group" aria-label="Quick actions">
-        <button type="button" disabled={!!busy || !image} onClick={() => send('extract')}><Icon name="book" size={16} /> Extract text</button>
-        <button type="button" disabled={!!busy || (!image && !prompt.trim())} onClick={() => send('summarize')}><Icon name="chart" size={16} /> Summarize</button>
-        <button type="button" disabled={!!busy || !image} onClick={() => send('describe')}><Icon name="scan" size={16} /> Describe image</button>
+        <button type="button" disabled={!image} onClick={() => openGemini(question('extract'))}><Icon name="book" size={16} /> Extract text</button>
+        <button type="button" disabled={!image && !prompt.trim()} onClick={() => openGemini(question('summarize'))}><Icon name="chart" size={16} /> Summarize</button>
+        <button type="button" disabled={!image} onClick={() => openGemini(question('describe'))}><Icon name="scan" size={16} /> Describe image</button>
       </div>
-      {image && <div className="ai-preview">
-        {image.previewFailed ? <span className="ai-file">{image.file.name}<small>Preview not available; it will still be sent.</small></span>
-          : <img src={image.url} alt="Attached image preview" onError={() => setImage(i => i && { ...i, previewFailed: true })} />}
-        <button type="button" className="ai-remove" aria-label="Remove the attached image" disabled={!!busy} onClick={() => setImage(null)}><Icon name="close" size={16} /></button>
-      </div>}
-      <form className="ai-form" onSubmit={e => { e.preventDefault(); send('ask'); }}>
-        <label className="field ai-prompt">Your question<textarea rows="3" value={prompt} maxLength={4000} onChange={e => setPrompt(e.target.value)} onPaste={onPaste}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send('ask'); }}
-          placeholder={image ? 'Ask about the image, or send it by itself' : 'e.g. Explain why 1/3 + 1/3 is not 2/6 for a 12-year-old'} /></label>
-        <div className="ai-send-row">
-          <button type="button" className="button outline" disabled={!!busy} onClick={() => fileRef.current?.click()}><Icon name="clip" size={16} /> {image ? 'Change image' : 'Attach image'}</button>
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={e => { attach(e.target.files?.[0]); e.target.value = ''; }} />
-          <Button type="submit" disabled={!!busy || (!prompt.trim() && !image)} aria-busy={!!busy} icon="arrow">{busy ? BUSY[busy] : 'Send'}</Button>
-        </div>
-        <small className="ai-hint">JPG, PNG, WebP or HEIC up to 10 MB. You can also paste a screenshot. Needs an internet connection.</small>
-      </form>
-      {error && <div className="field-error ai-error" role="alert">{error.message}{error.retry && <button type="button" className="text-button" disabled={!!busy} onClick={() => send(error.retry)}><Icon name="refresh" size={14} /> Try again</button>}</div>}
+      {image && <div className="ai-preview"><img src={image.url} alt="Attached image preview" />
+        <button type="button" className="ai-remove" aria-label="Remove the attached image" onClick={() => setImage(null)}><Icon name="close" size={16} /></button></div>}
+      <label className="field ai-prompt">Your question<textarea rows="3" value={prompt} maxLength={4000} onChange={e => setPrompt(e.target.value)} onPaste={onPaste}
+        placeholder={image ? 'Ask about the image (optional)' : 'e.g. Explain why 1/3 + 1/3 is not 2/6 for a 12-year-old'} /></label>
+      <div className="ai-send-row">
+        <button type="button" className="button outline" onClick={() => fileRef.current?.click()}><Icon name="clip" size={16} /> {image ? 'Change image' : 'Attach image'}</button>
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e => { attach(e.target.files?.[0]); e.target.value = ''; }} />
+        {image && <button type="button" className="button outline" onClick={() => copyImage(image.file).then(() => flash('Image copied. Paste it into Gemini.', 'success'), e => flash(e.message))}><Icon name="copy" size={16} /> Copy image</button>}
+        <Button type="button" disabled={!prompt.trim() && !image} onClick={() => openGemini(prompt.trim())} icon="spark">Open in Gemini</Button>
+      </div>
+      {step && <div className="note-banner" role="status"><Icon name="spark" size={17} /><p>{{
+        text: 'Gemini is open. Your question is copied: click the Gemini box and paste it (Ctrl+V, or long-press → Paste).',
+        'text-then-image': 'Gemini is open and your question is copied. Paste it, then come back, click Copy image and paste the image too.',
+        image: 'Gemini is open and the image is copied. Paste it into Gemini (Ctrl+V, or long-press → Paste) and ask your question.',
+        manual: 'Gemini is open. Copying didn’t work here, so type your question and attach the image in Gemini directly.',
+      }[step]}</p></div>}
+      <small className="ai-hint">Gemini opens in a separate window (or the Gemini app on phones). If nothing opens, allow pop-ups for this site.</small>
     </Panel>
-    {busy && <p className="busy-hint" role="status">{BUSY[busy]} Usually a few seconds.</p>}
-    {replies.map(r => <Panel key={r.id} className="ai-reply">
-      <div className="ai-reply-head"><span className="eyebrow">{LABEL[r.action]} · Gemini</span>
-        <button type="button" className="text-button" onClick={() => copy(r.text, flash)}><Icon name="copy" size={14} /> Copy</button></div>
-      {(r.prompt || r.thumb) && <div className="ai-asked">{r.thumb && <img src={r.thumb} alt="" />}{r.prompt && <p>{r.prompt}</p>}</div>}
-      <div className={`ai-text ${r.action === 'extract' ? 'ai-extract' : ''}`}>{r.text}</div>
-      {r.truncated && <small className="ai-hint">The answer was cut short. Ask for the rest.</small>}
-      {r.action === 'extract' && <small className="ai-hint">[unreadable] marks text Gemini couldn’t read. Check it against the image.</small>}
-    </Panel>)}
   </>;
 }

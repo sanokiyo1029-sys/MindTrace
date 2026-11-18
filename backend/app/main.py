@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from app import ai_bridge, config, gemini
-from app.routes import ai, assessments, auth, classes, insights_route, media, scans, student, teaching
+from app.routes import assessments, auth, classes, insights_route, media, scans, student, teaching
 from app.seed import seed
 
 logging.basicConfig(level=logging.INFO)
@@ -53,7 +53,7 @@ def health():
 
 
 for r in (auth.router, classes.router, classes.student_router, assessments.router, scans.router, insights_route.router,
-          student.router, teaching.router, media.router, ai.router):
+          student.router, teaching.router, media.router):
     app.include_router(r)
 
 

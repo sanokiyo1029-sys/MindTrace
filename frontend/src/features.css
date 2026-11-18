@@ -124,3 +124,9 @@
 .first-class p { margin: 0; color: var(--muted); }
 .first-class .button { justify-self: start; }
 .site-links > .site-login-link { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
+
+/* Google Lens hand-off in scan review */
+.lens-panel { display: grid; gap: 6px; margin: 10px 0; }
+.lens-panel .button { justify-self: start; }
+.lens-panel small { color: var(--muted); font-size: 12px; }
+.lens-msg { margin: 0; font-size: 13px; background: #fbf6e9; border-radius: 6px; padding: 8px 10px; }
